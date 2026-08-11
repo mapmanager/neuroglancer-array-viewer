@@ -2,7 +2,7 @@
 
 This experiment imports the exact same pinned Neuroglancer GitHub commit as the Python project and mounts it into our `#ng-viewer` div through an `NgImageViewer` adapter. It uses no iframe.
 
-It retains the official public FIB-25 precomputed datasource as a direct-embedding reference and now also exposes three Python-owned synthetic NumPy datasets through Neuroglancer's upstream Python datasource protocol.
+It retains the official public FIB-25 precomputed datasource as a direct-embedding reference and also exposes AcqImage-backed NumPy datasets through Neuroglancer's upstream Python datasource protocol.
 
 ```bash
 npm ci
@@ -12,8 +12,11 @@ npm run dev
 To test NumPy transport and replacement, start its Python data server from the project root in another terminal before selecting a NumPy dataset:
 
 ```bash
-uv run python direct_numpy_server.py
+uv sync --extra acqstore-demo
+uv run --extra acqstore-demo python direct_numpy_server.py
 ```
+
+AcqStore is an optional editable dependency from `../acqstore` and requires Python 3.12 or newer. It is used by this demo loader/transport only; it is not required by the core viewer installation.
 
 Node.js 22.18 or newer is required by this Neuroglancer revision. The public source requires network access and WebGL2. Its metadata describes a single-channel `uint8` electron-microscopy image with X/Y/Z dimensions, 8 nm isotropic voxels at full resolution, and a full-resolution shape of 6446 × 6643 × 8090. It has no C or T dimension.
 
@@ -27,8 +30,10 @@ Neuroglancer's default-viewer stylesheet assumes it owns the full page and sets 
 
 Expected Phase A diagnostics are `directMount: true`, `iframeCount: 0`, and a layer whose datasource state changes from `loading` to `loaded` with at least one render layer. The initial position and zoom come from upstream's published FIB-25 example. If the public source cannot be reached, the concrete datasource error is shown there.
 
-The datasource selector switches between the public Phase A reference and three NumPy arrays with different shapes, channel counts, pixels, and physical calibration. Each selection restores one complete viewer state, including source, coordinate space, centered position, shader, and layout.
+The datasource selector switches between the public Phase A reference and six AcqImage-backed arrays with different shapes, channel counts, pixels, and physical calibration. Each selection restores one complete viewer state, including source, coordinate space, centered position, shader, and layout.
 
-Python owns the existing synthetic datasets as `uint16` NumPy arrays in C,X,Y,Z order and exposes each through a distinct pinned-upstream `python://volume/...` URL. Vite proxies the protocol endpoints to `127.0.0.1:8001`, keeping worker requests same-origin. Fixed dataset-specific shaders validate all 2/1/3 channels. Dynamic NumPy-derived channel/color/contrast controls come next.
+Python owns each source through `AcqImage`, converts its full-resolution pixels once to contiguous `C,X,Y,Z`, and exposes it through a distinct pinned-upstream `python://volume/...` URL. The adapter applies `source_yx.T[::-1, :]` to every plane before transport, so source Y becomes displayed X and source X becomes reversed displayed Y; calibration follows that swap. Vite proxies protocol endpoints to `127.0.0.1:8001`, keeping worker requests same-origin.
+
+The two long synthetic sources use `C,Y,X` shapes `2,50000,1024` and `1,30000,100`. Their periodic Gaussian-profile bands change local angle smoothly along displayed X. Volumes are created lazily on first selection to avoid allocating all large arrays at startup. The rr30a preset lazily calls AcqStore `ensure_sample_file("rr30a-two-channel")`, uses the cached local file on subsequent runs, and applies fixed validation contrast based on measured channel percentiles. Dynamic NumPy-derived channel/color/contrast controls come next.
 
 NPZ is used for chunk encoding because the pinned upstream raw Python encoder still calls NumPy's removed `ndarray.tostring()` method. We do not patch the Git dependency.

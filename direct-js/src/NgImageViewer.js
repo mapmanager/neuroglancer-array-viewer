@@ -17,7 +17,7 @@ const SOURCE_PRESETS = {
   "numpy-a": {
     source: `${NUMPY_SOURCE_PREFIX}a`,
     name: "Python NumPy · Dataset A",
-    dataset: {key:"a", shapeZCYX:[70,2,1024,1024], scalesUm:[0.25,0.25,1]},
+    dataset: {key:"a", sourceAxes:"CZYX", sourceShape:[2,70,1024,1024], displayShapeXYZ:[1024,1024,70]},
     dimensions: {x:[0.25,"um"], y:[0.25,"um"], z:[1,"um"]},
     position: [512, 512, 35],
     crossSectionScale: 1,
@@ -30,9 +30,9 @@ const SOURCE_PRESETS = {
   "numpy-b": {
     source: `${NUMPY_SOURCE_PREFIX}b`,
     name: "Python NumPy · Dataset B",
-    dataset: {key:"b", shapeZCYX:[31,1,512,768], scalesUm:[0.65,0.40,2.5]},
-    dimensions: {x:[0.65,"um"], y:[0.40,"um"], z:[2.5,"um"]},
-    position: [384, 256, 15],
+    dataset: {key:"b", sourceAxes:"CZYX", sourceShape:[1,31,512,768], displayShapeXYZ:[512,768,31]},
+    dimensions: {x:[0.40,"um"], y:[0.65,"um"], z:[2.5,"um"]},
+    position: [256, 384, 15],
     crossSectionScale: 1,
     shader: `void main() {
   float c0 = toNormalized(getDataValue(0));
@@ -42,15 +42,53 @@ const SOURCE_PRESETS = {
   "numpy-c": {
     source: `${NUMPY_SOURCE_PREFIX}c`,
     name: "Python NumPy · Dataset C",
-    dataset: {key:"c", shapeZCYX:[18,3,640,384], scalesUm:[0.18,0.55,0.8]},
-    dimensions: {x:[0.18,"um"], y:[0.55,"um"], z:[0.8,"um"]},
-    position: [192, 320, 9],
+    dataset: {key:"c", sourceAxes:"CZYX", sourceShape:[3,18,640,384], displayShapeXYZ:[640,384,18]},
+    dimensions: {x:[0.55,"um"], y:[0.18,"um"], z:[0.8,"um"]},
+    position: [320, 192, 9],
     crossSectionScale: 1,
     shader: `void main() {
   float c0 = toNormalized(getDataValue(0));
   float c1 = toNormalized(getDataValue(1));
   float c2 = toNormalized(getDataValue(2));
   emitRGB(clamp(c0 * vec3(1.0, 0.23, 0.19) + c1 * vec3(0.2, 0.78, 0.35) + c2 * vec3(0.04, 0.52, 1.0), 0.0, 1.0));
+}`,
+  },
+  "numpy-long-2c": {
+    source: `${NUMPY_SOURCE_PREFIX}long-2c`,
+    name: "AcqImage synthetic · 2C long Gaussian bands",
+    dataset: {key:"long-2c", sourceAxes:"CYX", sourceShape:[2,50000,1024], displayShapeXYZ:[50000,1024,1]},
+    dimensions: {x:[1,""], y:[1,""], z:[1,""]},
+    position: [25000, 512, 0.5],
+    crossSectionScale: 60,
+    shader: `void main() {
+  float c0 = toNormalized(getDataValue(0));
+  float c1 = toNormalized(getDataValue(1));
+  emitRGB(clamp(c0 * vec3(1.0, 0.48, 0.05) + c1 * vec3(0.0, 0.85, 1.0), 0.0, 1.0));
+}`,
+  },
+  "numpy-long-1c": {
+    source: `${NUMPY_SOURCE_PREFIX}long-1c`,
+    name: "AcqImage synthetic · 1C long Gaussian bands",
+    dataset: {key:"long-1c", sourceAxes:"CYX", sourceShape:[1,30000,100], displayShapeXYZ:[30000,100,1]},
+    dimensions: {x:[1,""], y:[1,""], z:[1,""]},
+    position: [15000, 50, 0.5],
+    crossSectionScale: 38,
+    shader: `void main() {
+  float c0 = toNormalized(getDataValue(0));
+  emitRGB(c0 * vec3(1.0, 0.78, 0.15));
+}`,
+  },
+  "numpy-rr30a": {
+    source: `${NUMPY_SOURCE_PREFIX}rr30a`,
+    name: "AcqStore sample · rr30a two-channel",
+    dataset: {key:"rr30a", sampleId:"rr30a-two-channel", sourceAxes:"ZCYX", sourceShape:[70,2,1024,1024], displayShapeXYZ:[1024,1024,70]},
+    dimensions: {x:[1,""], y:[1,""], z:[1,""]},
+    position: [512, 512, 35],
+    crossSectionScale: 1,
+    shader: `void main() {
+  float c0 = clamp(toNormalized(getDataValue(0)) * 170.6640625, 0.0, 1.0);
+  float c1 = clamp(toNormalized(getDataValue(1)) * 221.4020270, 0.0, 1.0);
+  emitRGB(clamp(c0 * vec3(0.0, 1.0, 0.0) + c1 * vec3(1.0, 0.0, 1.0), 0.0, 1.0));
 }`,
   },
 };
@@ -201,6 +239,8 @@ export class NgImageViewer {
         "The public preset uses an upstream-supported public datasource.",
         "The NumPy preset uses upstream's Python datasource protocol through a local same-origin proxy.",
         "Synthetic NumPy datasets are replaced as complete viewer states; rendered-pixel completion has no supported ready event.",
+        "Selecting rr30a may wait while AcqStore downloads and caches the sample locally.",
+        "The demo server lazily creates volumes but retains selected volumes for the process lifetime.",
         "NumPy-derived channel/contrast controls remain deferred to the next milestone."
       ]
     };

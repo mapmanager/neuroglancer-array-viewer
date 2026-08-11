@@ -18,6 +18,9 @@
             <option value="numpy-a">NumPy · Dataset A · 70Z × 2C × 1024²</option>
             <option value="numpy-b">NumPy · Dataset B · 31Z × 1C × 512×768</option>
             <option value="numpy-c">NumPy · Dataset C · 18Z × 3C × 640×384</option>
+            <option value="numpy-long-2c">AcqImage synthetic · 2C × 50000×1024</option>
+            <option value="numpy-long-1c">AcqImage synthetic · 1C × 30000×100</option>
+            <option value="numpy-rr30a">AcqStore sample · rr30a two-channel</option>
           </select>
         </label>
         <label>Chrome placement
@@ -45,7 +48,7 @@
         <div id="ng-viewer" aria-label="Directly embedded Neuroglancer viewer"></div>
       </section>
 
-      <p>Public FIB-25 precomputed datasource in Google Cloud Storage. Direct mount: no iframe. The custom floating toolbar is our DOM, not Neuroglancer chrome.</p>
+      <p>Direct mount: no iframe. NumPy sources are supplied by AcqImage; selecting rr30a downloads and caches the sample through AcqStore when needed. The custom floating toolbar is our DOM, not Neuroglancer chrome.</p>
       <details open><summary>Adapter diagnostics</summary><pre id="diagnostics"></pre></details>
     </main>
     <script type="module" src="/src/main.js"></script>

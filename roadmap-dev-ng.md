@@ -164,7 +164,19 @@ The milestone preserves C,X,Y,Z rank, two channels, `uint16`, and 0.25 × 0.25 �
 
 The next V3 milestone now exposes synthetic A/B/C as three distinct Python datasource URLs. They deliberately differ in shape, channel count, pixels, and physical calibration. The adapter replaces the complete viewer state in one restore operation, resetting source, coordinate space, centered position, shader, and layout together. Repeated switching has distinct source identities, so old chunks cannot be mistaken for the newly selected dataset.
 
-Next work is replacement stress/race testing and dynamic NumPy-derived channel/color/contrast controls. AcqStore/AcqImage integration will follow from a sibling local-source checkout after this synthetic boundary is stable; the transport server should consume AcqImage metadata and arrays without coupling the viewer adapter to file loading. A broad unit-test suite is intentionally deferred during rapid API shaping, but stable metadata, bounds, and state-generation invariants should receive focused tests before AcqStore integration expands the surface.
+Replacement stress/race testing and dynamic NumPy-derived channel/color/contrast controls remained next at that point. The following milestone integrates AcqStore/AcqImage from the sibling local-source checkout while keeping file loading outside the viewer adapter. A broad unit-test suite remains deferred during rapid UI shaping, while stable orientation and calibration invariants receive focused tests.
+
+## V3 — AcqImage demo integration and scientific orientation
+
+AcqStore is now an optional editable demo extra from `../acqstore`; it is deliberately not part of the core Neuroglancer installation. Because current AcqStore requires Python 3.12+, the extra is version-gated while the core project retains upstream Neuroglancer's Python 3.11 compatibility. The direct NumPy server uses only public APIs: `AcqImage.from_array`, `AcqImage.pixels`, and `ensure_sample_file` followed by `AcqImage(path)`.
+
+One narrow adapter materializes full-resolution AcqPixels and converts supported YX/CYX/ZYX/CZYX axis sets into contiguous Neuroglancer `C,X,Y,Z`. It performs the established scientific-display mutation once for the entire volume: each source plane becomes `source_yx.T[::-1, :]`. Therefore source Y becomes displayed X, source X becomes reversed displayed Y, and their calibration/units swap accordingly. Unsupported axes such as T fail clearly rather than being guessed. Focused deterministic tests lock this orientation and calibration contract.
+
+The server now constructs all datasets lazily on first request. Existing A/B/C pass through AcqImage, two new synthetic acquisitions use source `C,Y,X` shapes `2,50000,1024` and `1,30000,100`, and their Gaussian-profile diagonal bands vary angle smoothly along the long displayed-X axis. A sixth preset uses the remote catalog ID `rr30a-two-channel`; selection downloads/caches it through AcqStore and opens the resulting local TIFF. Its verified native metadata is `Z,C,Y,X = 70,2,1024,1024`, uint16, with pixel-unit calibration. Fixed rr30a validation contrast uses measured channel p99 values (384 and 296); general dynamic contrast remains deferred.
+
+Verification covered orientation tests, Python syntax, production JS build, all six metadata endpoints, a real encoded NPZ chunk from every source, visible long-band rendering, visible two-channel rr30a rendering, rapid six-source replacement, and Z control after replacement. The next logical milestone is generated per-channel color/contrast controls derived from the selected AcqImage metadata.
+
+Current memory policy is lazy creation plus process-lifetime caching: startup is light, but every selected volume remains cached. Before general multi-file runtime use, add an explicit active-dataset/generation lifecycle so retired AcqImage/LocalVolume arrays can be released without allowing late chunk requests from an old source to repopulate stale data.
 
 ## Clean-room install and run
 
@@ -189,7 +201,8 @@ npm run dev
 For the NumPy transport preset, also run from the project root:
 
 ```bash
-uv run python direct_numpy_server.py
+uv sync --extra acqstore-demo
+uv run --extra acqstore-demo python direct_numpy_server.py
 ```
 
 Open the printed local URL and confirm diagnostics report `directMount: true`, `iframeCount: 0`, plus a `loaded` datasource and a nonzero render-layer count. Confirm the public FIB-25 image loads; use wheel and the Z number control in both directions; toggle scale bar and axis lines; select all four layouts and return to XY; and move our layout chrome to top, left, bottom, and outside. Then run the production build check:

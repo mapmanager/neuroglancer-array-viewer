@@ -2,7 +2,7 @@
 
 Fresh, standalone v2 Neuroglancer experiments. There is no CloudScope, NiceWidgets, or NiceGUI.
 
-The default demo is a repaired Python `LocalVolume` reference displayed in an iframe controlled by our own page. A separate `direct-js/` app mounts Neuroglancer directly into our `<div>`. It can show the known-supported public FIB-25 source or any of three synthetic Python-owned NumPy datasets.
+The default demo is a repaired Python `LocalVolume` reference displayed in an iframe controlled by our own page. A separate `direct-js/` app mounts Neuroglancer directly into our `<div>`. It can show the known-supported public FIB-25 source or AcqImage-backed NumPy datasets supplied by the local Python transport.
 
 ## Prerequisites
 
@@ -45,10 +45,20 @@ npm run dev
 
 Open the Vite URL it prints. This is a direct mount into our `<div>` with no iframe. Its custom toolbar switches among XY, XY + 3D, 4-panel, and 3D layouts and can float at three viewer edges or sit outside the viewer. It requires internet access for the public demonstration datasource. See `direct-js/README.md`.
 
-For the NumPy transport milestones, run this from the project root in another terminal, then select Dataset A, B, or C in the direct page:
+AcqStore is an optional demo/loading dependency, not a core Neuroglancer viewer dependency. The current local AcqStore checkout requires Python 3.12 or newer. Install the optional editable sibling integration with:
 
 ```bash
-uv run python direct_numpy_server.py
+uv sync --extra acqstore-demo
 ```
+
+For the NumPy transport milestones, run this from the project root in another terminal:
+
+```bash
+uv run --extra acqstore-demo python direct_numpy_server.py
+```
+
+The direct selector includes the original A/B/C arrays, two long Gaussian-band AcqImage synthetics (`C,Y,X = 2,50000,1024` and `1,30000,100`), and the `rr30a-two-channel` AcqStore sample. The server creates volumes lazily. Selecting rr30a calls `ensure_sample_file`, downloads and caches it when absent, then opens the local path with `AcqImage`.
+
+Before transport, each AcqImage `(Y,X)` plane is transposed and flipped along the new display-Y axis. The long source-Y dimension therefore becomes horizontal Neuroglancer X; X/Y calibration and units are swapped with the data orientation.
 
 For the full design record and clean-room checklist, read `roadmap-dev-ng.md`.
