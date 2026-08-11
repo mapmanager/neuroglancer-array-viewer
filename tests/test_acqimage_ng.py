@@ -1,3 +1,5 @@
+"""Tests for AcqImage-to-Neuroglancer orientation and calibration."""
+
 from __future__ import annotations
 
 import unittest
@@ -9,7 +11,10 @@ from acqimage_ng import acquisition_to_ng
 
 
 class AcqImageNgTests(unittest.TestCase):
+    """Verify stable scientific-display transformations."""
+
     def test_transpose_then_flip_y_and_swap_calibration(self) -> None:
+        """Transpose/flip each plane and move calibration with its axis."""
         source_yx = np.arange(6, dtype=np.uint16).reshape(2, 3)
         acquisition = AcqImage.from_array(
             source_yx,
@@ -31,6 +36,7 @@ class AcqImageNgTests(unittest.TestCase):
         self.assertTrue(result.data_cxyz.flags.c_contiguous)
 
     def test_reorders_zcyx_without_losing_channels_or_z(self) -> None:
+        """Retain channel and Z identity while producing C,X,Y,Z data."""
         source = np.arange(2 * 2 * 3 * 4, dtype=np.uint16).reshape(2, 2, 3, 4)
         acquisition = AcqImage.from_array(
             source.transpose(1, 0, 2, 3),

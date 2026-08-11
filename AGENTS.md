@@ -159,6 +159,17 @@ limitations, milestones, or smoke-test expectations change.
 - Keep `direct-js/README.md` aligned with the direct viewer's current behavior.
 - Do not document planned behavior as already implemented or verified.
 
+## Code documentation
+
+- Python modules have module docstrings. Use Google-style docstrings for
+  project-owned classes, functions, and non-trivial methods, including
+  `Args`, `Returns`, and `Raises` sections when applicable.
+- JavaScript public APIs use JSDoc with parameter, return, and exception
+  contracts where applicable. Document non-obvious internal helpers without
+  narrating ordinary syntax.
+- Inline comments explain intent, invariants, coordinate transformations, or
+  verified upstream quirks. Avoid comments that merely repeat the code.
+
 ## Git discipline
 
 This directory is an independent Git repository.

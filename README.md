@@ -57,10 +57,34 @@ For the NumPy transport milestones, run this from the project root in another te
 uv run --extra acqstore-demo python direct_numpy_server.py
 ```
 
-The direct selector includes the original A/B/C arrays, two long Gaussian-band AcqImage synthetics (`C,Y,X = 2,50000,1024` and `1,30000,100`), and the `rr30a-two-channel` AcqStore sample. The server creates volumes lazily. Selecting rr30a calls `ensure_sample_file`, downloads and caches it when absent, then opens the local path with `AcqImage`. The server calculates each materialized channel's exact observed minimum and maximum once; those values initialize both the contrast controls and shader mapping instead of assuming the entire uint16 domain is occupied.
+The direct selector includes the original A/B/C arrays, two long Gaussian-band AcqImage synthetics (`C,Y,X = 2,50000,1024` and `1,30000,100`), and the `rr30a-two-channel` AcqStore sample. The server creates volumes lazily. Selecting rr30a calls `ensure_sample_file`, downloads and caches it when absent, then opens the local path with `AcqImage`. The server calculates each materialized channel's exact observed minimum and maximum once; those values remain the hard slider limits. A uint16 histogram supplies a separate 1st–99th percentile automatic range used for initial display and each channel's Auto button.
 
 Before transport, each AcqImage `(Y,X)` plane is transposed and flipped along the new display-Y axis. The long source-Y dimension therefore becomes horizontal Neuroglancer X; X/Y calibration and units are swapped with the data orientation. The long sources use `0.002 s` per displayed-X sample and `0.25 um` per displayed-Y sample. Neuroglancer's coordinate-space scales preserve their non-square physical aspect, and the adapter initially fits that calibrated extent into the XY panel.
 
 The direct adapter publishes view-state snapshots through `getViewState()` and `subscribeViewState()`, including named index position, calibrated physical position, and both index and physical XY ranges for every slice panel. The optional Python server receives coalesced snapshots at `/api/view-state` and exposes non-blocking callbacks through `ViewStateDispatcher.subscribe()`. Its example `log_view_state()` subscriber logs dataset, layout, calibrated Z, and calibrated XY bounds with source file, function, and line context.
+
+### Python integration boundary
+
+The current Python boundary is deliberately small. `acquisition_to_ng(acquisition)` converts a complete AcqImage to display-oriented C,X,Y,Z data. `ViewStateDispatcher.subscribe(callback)` registers a non-blocking callback for browser state:
+
+```python
+from direct_numpy_server import ViewStateDispatcher
+
+
+def on_view_state(state: dict[str, object]) -> None:
+    """Receive calibrated viewer state on the dispatcher thread."""
+    print(state["physicalPosition"])
+    print(state["xyPhysicalBounds"])
+
+
+dispatcher = ViewStateDispatcher()
+unsubscribe = dispatcher.subscribe(on_view_state)
+
+# During shutdown:
+unsubscribe()
+dispatcher.close()
+```
+
+The standalone server wires browser POSTs into that dispatcher. This is a verified demo contract, not yet a packaged application API. The next high-priority architecture milestone is a small public server/application wrapper that registers datasets, owns lifecycle, exposes subscriptions, and shuts down cleanly without requiring callers to configure request-handler class attributes.
 
 For the full design record and clean-room checklist, read `roadmap-dev-ng.md`.

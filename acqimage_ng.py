@@ -11,7 +11,15 @@ from acqstore.acq_image import AcqImage, AcqPixels
 
 @dataclass(frozen=True)
 class NgVolumeData:
-    """One display-oriented NumPy volume and its Neuroglancer coordinates."""
+    """One display-oriented NumPy volume and its Neuroglancer coordinates.
+
+    Attributes:
+        data_cxyz: Contiguous uint16 volume in Neuroglancer C,X,Y,Z order.
+        scales: Per-axis coordinate scale in C,X,Y,Z order.
+        units: Per-axis Neuroglancer unit labels.
+        source_axes: Original AcqImage axis names.
+        source_shape: Original acquisition shape.
+    """
 
     data_cxyz: np.ndarray
     scales: tuple[float, float, float, float]
@@ -73,11 +81,31 @@ def acq_pixels_to_ng(pixels: AcqPixels) -> NgVolumeData:
 
 
 def acquisition_to_ng(acquisition: AcqImage) -> NgVolumeData:
-    """Return display-oriented full-resolution pixels for one acquisition."""
+    """Return display-oriented full-resolution pixels for one acquisition.
+
+    Args:
+        acquisition: AcqImage whose complete pixels should be transported.
+
+    Returns:
+        Display-oriented pixels and matching coordinate calibration.
+
+    Raises:
+        ValueError: If acquisition axes are unsupported or omit Y/X.
+    """
     return acq_pixels_to_ng(acquisition.pixels)
 
 
 def _axis_values(pixels: AcqPixels, values: tuple[Any, ...], *, default: Any) -> dict[str, Any]:
+    """Associate an AcqPixels metadata tuple with its named axes.
+
+    Args:
+        pixels: Pixels supplying the ordered axis names.
+        values: Metadata values in the same order as the pixel axes.
+        default: Value used when the metadata tuple is shorter than the axes.
+
+    Returns:
+        Mapping from axis name to metadata value.
+    """
     return {
         axis: values[index] if index < len(values) else default
         for index, axis in enumerate(pixels.axes)
@@ -85,6 +113,14 @@ def _axis_values(pixels: AcqPixels, values: tuple[Any, ...], *, default: Any) ->
 
 
 def _ng_unit(value: Any) -> str:
+    """Normalize an AcqStore unit label for Neuroglancer.
+
+    Args:
+        value: AcqStore unit label.
+
+    Returns:
+        Neuroglancer-compatible label, with pixel units represented as empty.
+    """
     label = str(value or "").strip()
     if label.lower() in {"pixel", "pixels", "px", "unitless"}:
         return ""

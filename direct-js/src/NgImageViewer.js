@@ -1,3 +1,7 @@
+/**
+ * @file Direct Neuroglancer adapter and the repository's unstable-API boundary.
+ */
+
 import "neuroglancer";
 import "neuroglancer/unstable/datasource/python/register_default.js";
 import { setupDefaultViewer } from "neuroglancer/unstable/ui/default_viewer_setup.js";
@@ -27,6 +31,7 @@ function channels(count, windows, colors = DEFAULT_CHANNEL_COLORS) {
     name: `C${index}`,
     color: colors[index % colors.length],
     domain: [0, 65535],
+    autoContrast: windows[index] ?? windows[0] ?? [0, 65535],
     contrast: windows[index] ?? windows[0] ?? [0, 65535],
   }));
 }
@@ -38,7 +43,7 @@ const SOURCE_PRESETS = {
     dimensions: {x:[8e-9,"m"], y:[8e-9,"m"], z:[8e-9,"m"]},
     position: [2980.1868, 3153.9294, 4045],
     crossSectionScale: 2.886371,
-    channels: [{index:0, name:"image", color:"#ffffff", domain:[0,255], contrast:[0,255]}],
+    channels: [{index:0, name:"image", color:"#ffffff", domain:[0,255], autoContrast:[0,255], contrast:[0,255]}],
   },
   "numpy-a": {
     source: `${NUMPY_SOURCE_PREFIX}a`,
@@ -126,8 +131,19 @@ function channelLayerSpec(preset, channel) {
   };
 }
 
-/** Our narrow adapter: this is the only module that imports unstable NG internals. */
+/**
+ * Directly mounts and controls one Neuroglancer viewer.
+ *
+ * This adapter is the only project module permitted to access pinned unstable
+ * Neuroglancer APIs.
+ */
 export class NgImageViewer {
+  /**
+   * Creates a direct viewer.
+   *
+   * @param {HTMLElement} target - Element that owns the Neuroglancer canvas.
+   * @param {(diagnostics: object) => void} [onChange] - Diagnostics callback.
+   */
   constructor(target, onChange = () => {}) {
     this.target = target;
     this.viewer = setupDefaultViewer({target});
@@ -172,6 +188,13 @@ export class NgImageViewer {
     });
   }
 
+  /**
+   * Replaces the complete viewer state with a registered datasource preset.
+   *
+   * @param {string} [presetName="public"] - Registered preset identifier.
+   * @returns {Promise<boolean>} True when this request remains the newest load.
+   * @throws {Error} If the preset or its Python metadata cannot be loaded.
+   */
   async setSource(presetName = "public") {
     const preset = SOURCE_PRESETS[presetName];
     if (!preset) throw new Error(`Unknown datasource preset: ${presetName}`);
@@ -184,8 +207,14 @@ export class NgImageViewer {
       const metadata = await response.json();
       channels = preset.channels.map((channel, index) => {
         const domain = metadata.channelRanges?.[index];
+        const autoContrast = metadata.channelAutoRanges?.[index];
         if (!domain || domain.length !== 2 || domain[0] >= domain[1]) return channel;
-        return {...channel, domain, contrast: domain};
+        const validAuto = autoContrast?.length === 2
+          && domain[0] <= autoContrast[0]
+          && autoContrast[0] < autoContrast[1]
+          && autoContrast[1] <= domain[1];
+        const initialContrast = validAuto ? autoContrast : domain;
+        return {...channel, domain, autoContrast: initialContrast, contrast: initialContrast};
       });
     }
     if (generation !== this.sourceGeneration) return false;
@@ -195,6 +224,7 @@ export class NgImageViewer {
     this.channels = channels.map((channel) => ({
       ...channel,
       domain: [...channel.domain],
+      autoContrast: [...channel.autoContrast],
       contrast: [...channel.contrast],
     }));
     // Configure supported UI visibility before restoring asynchronous layer
@@ -219,6 +249,7 @@ export class NgImageViewer {
     return true;
   }
 
+  /** Applies the active fitted visual ratio after coordinate-space changes. */
   applyFitConfiguration() {
     const fit = this.fitConfiguration;
     if (!fit) return;
@@ -232,6 +263,12 @@ export class NgImageViewer {
     this.viewer.crossSectionScale.value = fit.crossSectionScale;
   }
 
+  /**
+   * Calculates a fitted visual ratio for dimensions with unlike units.
+   *
+   * @param {object} [preset] - Active datasource preset.
+   * @returns {object|null} Relative display scales and cross-section zoom.
+   */
   getFitConfiguration(preset = SOURCE_PRESETS[this.presetName]) {
     const shape = preset?.dataset?.displayShapeXYZ;
     if (!shape) return null;
@@ -255,6 +292,7 @@ export class NgImageViewer {
     };
   }
 
+  /** Hides only upstream chrome with verified configuration flags. */
   hideSupportedChrome() {
     const ui = this.viewer.uiConfiguration;
     ui.showUIControls.value = false;
@@ -263,9 +301,18 @@ export class NgImageViewer {
     ui.showLayerPanel.value = false;
   }
 
+  /** @param {boolean} value Whether to show native scale bars. */
   setScaleBar(value) { this.viewer.showScaleBar.value = Boolean(value); }
+
+  /** @param {boolean} value Whether to show native axis lines. */
   setAxisLines(value) { this.viewer.showAxisLines.value = Boolean(value); }
 
+  /**
+   * Selects a supported built-in or per-channel layout.
+   *
+   * @param {string} value - Layout identifier.
+   * @throws {Error} If the layout is unsupported.
+   */
   setLayout(value) {
     if (!SUPPORTED_LAYOUTS.has(value)) throw new Error(`Unsupported layout: ${value}`);
     if (value === "channels-row" || value === "channels-column") {
@@ -289,21 +336,34 @@ export class NgImageViewer {
     this.currentLayout = value;
   }
 
+  /** @param {number} index Channel index. @returns {string} Managed layer name. */
   getChannelLayerName(index) {
     return `${SOURCE_PRESETS[this.presetName].name} · ${this.channels[index].name}`;
   }
 
+  /** @param {number} index Channel index. @returns {object|undefined} Image layer. */
   getChannelLayer(index) {
     const name = this.getChannelLayerName(index);
     return this.viewer.layerManager.managedLayers.find((layer) => layer.name === name)?.layer;
   }
 
+  /** @returns {Array<object>} Defensive copies of current channel state. */
   getChannels() {
     return (this.channels ?? []).map((channel) => ({
-      ...channel, domain: [...channel.domain], contrast: [...channel.contrast],
+      ...channel,
+      domain: [...channel.domain],
+      autoContrast: [...channel.autoContrast],
+      contrast: [...channel.contrast],
     }));
   }
 
+  /**
+   * Updates one channel's LUT color.
+   *
+   * @param {number} index - Zero-based channel index.
+   * @param {string} color - Six-digit CSS hexadecimal color.
+   * @throws {Error} If the channel, color, or shader control is invalid.
+   */
   setChannelColor(index, color) {
     const channel = this.channels?.[index];
     if (!channel) throw new Error(`Invalid channel index: ${index}`);
@@ -315,6 +375,14 @@ export class NgImageViewer {
     this.emitChange();
   }
 
+  /**
+   * Sets one channel's active contrast mapping within its observed domain.
+   *
+   * @param {number} index - Zero-based channel index.
+   * @param {number} low - Inclusive lower contrast bound.
+   * @param {number} high - Inclusive upper contrast bound.
+   * @throws {Error} If bounds or the channel shader control are invalid.
+   */
   setChannelWindow(index, low, high) {
     const channel = this.channels?.[index];
     if (!channel) throw new Error(`Invalid channel index: ${index}`);
@@ -339,6 +407,25 @@ export class NgImageViewer {
     this.emitChange();
   }
 
+  /**
+   * Restores one channel's server-calculated automatic contrast range.
+   *
+   * @param {number} index - Zero-based channel index.
+   * @throws {Error} If the channel or shader control is unavailable.
+   */
+  resetChannelContrast(index) {
+    const channel = this.channels?.[index];
+    if (!channel) throw new Error(`Invalid channel index: ${index}`);
+    this.setChannelWindow(index, ...channel.autoContrast);
+  }
+
+  /**
+   * Subscribes to coalesced, semantic viewer-state snapshots.
+   *
+   * @param {(state: object) => void} callback - Snapshot consumer.
+   * @returns {() => void} Function that removes the subscription.
+   * @throws {TypeError} If callback is not a function.
+   */
   subscribeViewState(callback) {
     if (typeof callback !== "function") throw new TypeError("Expected a view-state callback");
     this.subscribers.add(callback);
@@ -346,6 +433,7 @@ export class NgImageViewer {
     return () => this.subscribers.delete(callback);
   }
 
+  /** Emits diagnostics and deduplicated public view-state callbacks. */
   emitChange() {
     const diagnostics = this.getDiagnostics();
     this.onChange(diagnostics);
@@ -358,6 +446,11 @@ export class NgImageViewer {
     for (const callback of [...this.subscribers]) callback(viewState);
   }
 
+  /**
+   * Derives index-space XY bounds from each visible slice-panel projection.
+   *
+   * @returns {Array<object>|null} One bounds record per visible XY panel.
+   */
   getXYBounds() {
     const xIndex = this.viewer.coordinateSpace.value.names.indexOf("x");
     const yIndex = this.viewer.coordinateSpace.value.names.indexOf("y");
@@ -387,6 +480,11 @@ export class NgImageViewer {
     return bounds.length === 0 ? null : bounds;
   }
 
+  /**
+   * Returns the current public viewer-state snapshot.
+   *
+   * @returns {object} Dataset, layout, positions, and XY viewport bounds.
+   */
   getViewState() {
     const coordinateSpace = this.viewer.coordinateSpace.value;
     const presetDimensions = SOURCE_PRESETS[this.presetName]?.dimensions;
@@ -429,15 +527,23 @@ export class NgImageViewer {
     };
   }
 
+  /** @returns {number} Global coordinate index for Z, or -1 when absent. */
   getZAxisIndex() {
     return this.viewer.coordinateSpace.value.names.indexOf("z");
   }
 
+  /** @returns {number|undefined} Current index-space Z coordinate. */
   getZ() {
     const index = this.getZAxisIndex();
     return index < 0 ? undefined : this.viewer.position.value[index];
   }
 
+  /**
+   * Sets the current Z coordinate.
+   *
+   * @param {number|string} value - New index-space Z coordinate.
+   * @throws {Error} If the source has no Z dimension.
+   */
   setZ(value) {
     const index = this.getZAxisIndex();
     if (index < 0) throw new Error("The current source has no z dimension");
@@ -446,6 +552,7 @@ export class NgImageViewer {
     this.viewer.position.value = position;
   }
 
+  /** @returns {Array<object>} Layer, shader, render, and datasource diagnostics. */
   getLayerDiagnostics() {
     return this.viewer.layerManager.managedLayers.map((managedLayer) => {
       const layer = managedLayer.layer;
@@ -481,6 +588,7 @@ export class NgImageViewer {
     });
   }
 
+  /** @returns {object} Complete diagnostics for the development UI. */
   getDiagnostics() {
     let layout = this.currentLayout ?? "xy";
     try {
@@ -529,5 +637,6 @@ export class NgImageViewer {
     };
   }
 
+  /** Releases subscriptions and all Neuroglancer-owned resources. */
   dispose() { this.subscribers.clear(); this.viewer.dispose(); }
 }

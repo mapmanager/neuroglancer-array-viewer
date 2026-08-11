@@ -1,3 +1,5 @@
+/** @file Demo-page composition around the public NgImageViewer adapter. */
+
 import "./style.css";
 import { NgImageViewer } from "./NgImageViewer.js";
 
@@ -9,14 +11,18 @@ let lastDiagnostics = "";
 let channelSignature = "";
 
 function renderChannelControls(channels) {
-  const signature = JSON.stringify(channels.map(({index, name, domain}) => ({index, name, domain})));
-  if (signature === channelSignature) return;
-  channelSignature = signature;
-  $("#channel-controls").replaceChildren(...channels.map((channel) => {
-    const row = document.createElement("div");
-    row.className = "channel-row";
-    row.dataset.channel = String(channel.index);
-    row.innerHTML = `
+  const signature = JSON.stringify(
+    channels.map(({index, name, domain, autoContrast}) => ({
+      index, name, domain, autoContrast,
+    })),
+  );
+  if (signature !== channelSignature) {
+    channelSignature = signature;
+    $("#channel-controls").replaceChildren(...channels.map((channel) => {
+      const row = document.createElement("div");
+      row.className = "channel-row";
+      row.dataset.channel = String(channel.index);
+      row.innerHTML = `
       <strong>${channel.name}</strong>
       <input class="channel-color" type="color" value="${channel.color}" aria-label="${channel.name} color" />
       <div class="channel-range" style="--low:${100 * (channel.contrast[0] - channel.domain[0]) / (channel.domain[1] - channel.domain[0])}%; --high:${100 * (channel.contrast[1] - channel.domain[0]) / (channel.domain[1] - channel.domain[0])}%">
@@ -24,9 +30,23 @@ function renderChannelControls(channels) {
         <input class="channel-high" type="range" min="${channel.domain[0]}" max="${channel.domain[1]}" value="${channel.contrast[1]}" step="1" aria-label="${channel.name} contrast maximum" />
       </div>
       <input class="channel-low-number" type="number" min="${channel.domain[0]}" max="${channel.domain[1]}" value="${channel.contrast[0]}" step="1" aria-label="${channel.name} exact contrast minimum" />
-      <input class="channel-high-number" type="number" min="${channel.domain[0]}" max="${channel.domain[1]}" value="${channel.contrast[1]}" step="1" aria-label="${channel.name} exact contrast maximum" />`;
-    return row;
-  }));
+      <input class="channel-high-number" type="number" min="${channel.domain[0]}" max="${channel.domain[1]}" value="${channel.contrast[1]}" step="1" aria-label="${channel.name} exact contrast maximum" />
+      <button class="channel-auto" type="button" title="Restore ${channel.name} 1–99% contrast">Auto</button>`;
+      return row;
+    }));
+  }
+  for (const channel of channels) {
+    const row = $(`.channel-row[data-channel="${channel.index}"]`);
+    const [low, high] = channel.contrast;
+    row.querySelector(".channel-color").value = channel.color;
+    row.querySelector(".channel-low").value = String(low);
+    row.querySelector(".channel-high").value = String(high);
+    row.querySelector(".channel-low-number").value = String(low);
+    row.querySelector(".channel-high-number").value = String(high);
+    const span = channel.domain[1] - channel.domain[0];
+    row.querySelector(".channel-range").style.cssText =
+      `--low:${100 * (low - channel.domain[0]) / span}%; --high:${100 * (high - channel.domain[0]) / span}%`;
+  }
 }
 
 function render(value) {
@@ -131,6 +151,12 @@ $("#channel-controls").addEventListener("input", (event) => {
   const rangeLow = Number(lowRange.min);
   const rangeHigh = Number(lowRange.max);
   row.querySelector(".channel-range").style.cssText = `--low:${100 * (low - rangeLow) / (rangeHigh - rangeLow)}%; --high:${100 * (high - rangeLow) / (rangeHigh - rangeLow)}%`;
+});
+$("#channel-controls").addEventListener("click", (event) => {
+  const button = event.target.closest(".channel-auto");
+  if (!button) return;
+  const row = button.closest(".channel-row");
+  adapter.resetChannelContrast(Number(row.dataset.channel));
 });
 window.addEventListener("beforeunload", () => {
   unsubscribeBridge();

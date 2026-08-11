@@ -1,3 +1,5 @@
+"""Run the standalone iframe reference for synthetic Neuroglancer datasets."""
+
 from __future__ import annotations
 
 import argparse
@@ -22,6 +24,16 @@ ROOT = Path(__file__).resolve().parent
 WEB_ROOT = ROOT / "web"
 @dataclass(frozen=True)
 class DatasetSpec:
+    """Describe one synthetic iframe-reference dataset.
+
+    Attributes:
+        key: Stable dataset identifier.
+        label: User-facing selector label.
+        shape_zcyx: Natural NumPy shape in Z,C,Y,X order.
+        scales_um: X, Y, and Z calibration in micrometers.
+        colors: Initial per-channel LUT colors.
+        patterns: Human-readable expected channel contents.
+    """
     key: str
     label: str
     shape_zcyx: tuple[int, int, int, int]
@@ -50,7 +62,14 @@ DATASETS = {
 
 
 def make_dataset(spec: DatasetSpec) -> np.ndarray:
-    """Create visibly distinct synthetic uint16 data in natural Z,C,Y,X order."""
+    """Create visibly distinct uint16 data in natural Z,C,Y,X order.
+
+    Args:
+        spec: Synthetic dataset definition.
+
+    Returns:
+        Newly allocated uint16 array matching `spec.shape_zcyx`.
+    """
     z_count, c_count, y_count, x_count = spec.shape_zcyx
     yy, xx = np.ogrid[:y_count, :x_count]
     data = np.empty(spec.shape_zcyx, dtype=np.uint16)
@@ -79,6 +98,7 @@ def make_dataset(spec: DatasetSpec) -> np.ndarray:
 
 @dataclass
 class RequestedState:
+    """Track control-page state requested by the user."""
     dataset: str = "a"
     z: int = 35
     mode: str = "composite"
@@ -90,7 +110,10 @@ class RequestedState:
 
 
 class Demo:
+    """Own the iframe Neuroglancer viewer and its transactional state."""
+
     def __init__(self) -> None:
+        """Create the initial Dataset A viewer and register state observation."""
         self.viewer = neuroglancer.Viewer()
         self.requested = RequestedState()
         self.spec = DATASETS[self.requested.dataset]
@@ -106,14 +129,35 @@ class Demo:
         self.viewer.shared_state.add_changed_callback(self._viewer_changed)
 
     def _viewer_changed(self) -> None:
+        """Record native Neuroglancer changes for diagnostics."""
         self.last_viewer_change = time.time()
 
     @staticmethod
     def _dimension_names(state: Any) -> list[str]:
+        """Return coordinate names from a Neuroglancer state object.
+
+        Args:
+            state: Neuroglancer viewer state.
+
+        Returns:
+            Ordered coordinate names.
+        """
         return [str(name) for name in state.dimensions.names]
 
     @classmethod
     def _spatial_axis_index(cls, state: Any, name: str) -> int:
+        """Resolve a named spatial dimension.
+
+        Args:
+            state: Neuroglancer viewer state.
+            name: Required coordinate name.
+
+        Returns:
+            Coordinate index.
+
+        Raises:
+            RuntimeError: If the named coordinate is absent.
+        """
         names = cls._dimension_names(state)
         try:
             return names.index(name)
@@ -124,6 +168,17 @@ class Demo:
 
     @staticmethod
     def _color_vector(value: str) -> str:
+        """Convert a CSS hexadecimal color to a GLSL vector.
+
+        Args:
+            value: Six-digit CSS hexadecimal color.
+
+        Returns:
+            GLSL `vec3` expression.
+
+        Raises:
+            ValueError: If the color is not six-digit hexadecimal.
+        """
         if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
             raise ValueError(f"Invalid RGB color: {value!r}")
         rgb = [int(value[i : i + 2], 16) / 255 for i in (1, 3, 5)]
@@ -131,9 +186,28 @@ class Demo:
 
     @classmethod
     def _shader(cls, r: RequestedState) -> str:
+        """Build the iframe layer shader from requested channel controls.
+
+        Args:
+            r: Requested display state.
+
+        Returns:
+            Neuroglancer GLSL shader source.
+        """
         # Current upstream represents uint16 samples as its own uint16_t GLSL struct.
         # toNormalized is the supported conversion and maps uint16 to [0, 1].
         def channel(name: str, index: int, low: int, high: int) -> str:
+            """Build one normalized uint16 channel expression.
+
+            Args:
+                name: GLSL local variable name.
+                index: Source channel index.
+                low: Lower contrast bound.
+                high: Upper contrast bound.
+
+            Returns:
+                GLSL statement defining the normalized channel.
+            """
             low_n = low / 65535
             width_n = max(1, high - low) / 65535
             return (
@@ -162,6 +236,7 @@ class Demo:
         )
 
     def _configure_once(self) -> None:
+        """Configure the initial dataset and supported native chrome."""
         with self.viewer.txn() as state:
             self._replace_dataset_state(state, self.spec, self.requested)
             state.show_scale_bar = self.requested.scale_bar
@@ -179,6 +254,13 @@ class Demo:
     def _replace_dataset_state(
         self, state: Any, spec: DatasetSpec, requested: RequestedState
     ) -> None:
+        """Replace dataset, coordinate, layer, and navigation state.
+
+        Args:
+            state: Open Neuroglancer transaction state.
+            spec: Dataset being installed.
+            requested: Requested display settings for the new dataset.
+        """
         z_count, _, y_count, x_count = spec.shape_zcyx
         x_um, y_um, z_um = spec.scales_um
         volume_dimensions = neuroglancer.CoordinateSpace(
@@ -206,6 +288,15 @@ class Demo:
 
     @staticmethod
     def _default_requested(spec: DatasetSpec, presentation: RequestedState) -> RequestedState:
+        """Construct dataset defaults while preserving presentation toggles.
+
+        Args:
+            spec: Newly selected dataset.
+            presentation: Previous state supplying presentation toggles.
+
+        Returns:
+            Fresh requested state for `spec`.
+        """
         z_count, c_count, _, _ = spec.shape_zcyx
         return RequestedState(
             dataset=spec.key,
@@ -221,8 +312,17 @@ class Demo:
     def update(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Snapshot requested state, then perform exactly one viewer transaction.
 
-        No helper called inside viewer.txn acquires requested_lock. This structural rule fixes
-        the v1 nested non-reentrant-lock deadlock without substituting an RLock.
+        No helper called inside `viewer.txn` acquires `requested_lock`. This
+        structural rule fixes the v1 nested non-reentrant-lock deadlock.
+
+        Args:
+            payload: Partial requested-state update from the control page.
+
+        Returns:
+            Diagnostics after the successful transaction.
+
+        Raises:
+            ValueError: If a dataset, channel, mode, or value is invalid.
         """
         if not isinstance(payload, dict):
             raise ValueError("JSON request body must be an object")
@@ -307,6 +407,11 @@ class Demo:
         return self.diagnostics()
 
     def diagnostics(self) -> dict[str, Any]:
+        """Return requested, actual, and dataset diagnostic state.
+
+        Returns:
+            JSON-compatible diagnostic snapshot.
+        """
         with self.requested_lock:
             requested = vars(copy.deepcopy(self.requested))
         state = self.viewer.state
@@ -347,6 +452,11 @@ class Demo:
 
     @staticmethod
     def dataset_catalog() -> list[dict[str, Any]]:
+        """Return JSON-compatible metadata for iframe demo datasets.
+
+        Returns:
+            Dataset selector records.
+        """
         return [
             {
                 "key": spec.key,
@@ -360,11 +470,28 @@ class Demo:
 
 
 def make_handler(demo: Demo):
+    """Create an HTTP request-handler class bound to one demo.
+
+    Args:
+        demo: Viewer instance served by every request handler.
+
+    Returns:
+        Configured `SimpleHTTPRequestHandler` subclass.
+    """
     class Handler(SimpleHTTPRequestHandler):
+        """Serve static iframe controls and their JSON state API."""
+
         def __init__(self, *args: Any, **kwargs: Any) -> None:
+            """Initialize a handler rooted at the project web directory."""
             super().__init__(*args, directory=str(WEB_ROOT), **kwargs)
 
         def _json(self, value: Any, status: HTTPStatus = HTTPStatus.OK) -> None:
+            """Write one JSON response.
+
+            Args:
+                value: JSON-serializable response value.
+                status: HTTP response status.
+            """
             body = json.dumps(value, indent=2).encode()
             self.send_response(status)
             self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -373,6 +500,7 @@ def make_handler(demo: Demo):
             self.wfile.write(body)
 
         def do_GET(self) -> None:
+            """Serve bootstrap/state endpoints or a static web asset."""
             path = urlparse(self.path).path
             if path == "/api/bootstrap":
                 self._json(
@@ -389,6 +517,7 @@ def make_handler(demo: Demo):
             super().do_GET()
 
         def do_POST(self) -> None:
+            """Validate and apply a control-page state mutation."""
             if urlparse(self.path).path != "/api/state":
                 self._json({"error": "not found"}, HTTPStatus.NOT_FOUND)
                 return
@@ -406,6 +535,12 @@ def make_handler(demo: Demo):
                 )
 
         def log_message(self, fmt: str, *args: Any) -> None:
+            """Log non-polling control requests.
+
+            Args:
+                fmt: Base request-handler format string.
+                *args: Values interpolated into `fmt`.
+            """
             if self.command == "GET" and urlparse(self.path).path == "/api/state":
                 return
             print(f"control-http: {fmt % args}")
@@ -414,6 +549,7 @@ def make_handler(demo: Demo):
 
 
 def main() -> None:
+    """Parse command-line options and run the iframe control server."""
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
