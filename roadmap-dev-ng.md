@@ -1,0 +1,173 @@
+# Neuroglancer image viewer roadmap
+
+**FIRST DEVELOPMENT VERSION — v2 source of truth**
+
+Pinned upstream revision: `google/neuroglancer@576c94b08ad7609919eb42f8a93b9cf0e161df14` (verified as `master` while building v2 on 2026-08-11).
+
+## Problem and standalone boundary
+
+We need to learn whether Neuroglancer can become a reusable image-viewer primitive for an in-memory microscopy-style NumPy array while our application owns the surrounding controls. This is deliberately standalone: no CloudScope, NiceWidgets, or NiceGUI.
+
+The representative array is `uint16`, natural Python order `Z,C,Y,X`, and shape `70,2,1024,1024`. Synthetic patterns make Z, channel, orientation, and contrast mistakes visible. Physical metadata is explicit:
+
+| Dimension | Meaning | Scale | Unit |
+|---|---|---:|---|
+| `c^` | local color channel | 1 | unitless |
+| `x` | horizontal sample | 0.25 | µm/pixel |
+| `y` | vertical sample | 0.25 | µm/pixel |
+| `z` | slice | 1.0 | µm/slice |
+
+## V1 implementation and smoke-test evidence
+
+V1 used the published Python integration, a Python-owned NumPy array, `LocalVolume`, the Neuroglancer integration server, and its viewer inside our iframe. Our controls sent HTTP updates back to Python for Z, C0/C1/composite display, and contrast.
+
+It proved the essential chunked route: Python retained the array; the browser requested subvolumes through Neuroglancer; WebGL rendered the XY view. It also revealed:
+
+- first installation could take a long time and appeared stalled during a source/compression-related build;
+- the viewer was oversized on a 14-inch Retina laptop;
+- the scale bar said `100 nm` because v1 itself declared 1 nm X/Y/Z samples;
+- wheel changed native Z but our toolbar did not update;
+- Ctrl+wheel zoomed and updated the scale display/location information;
+- upper-left X/Y/Z location/dimension chrome remained;
+- two upper-right buttons offered `4panel` and `xy-3d` related layouts;
+- fixed red/green lines were Neuroglancer axis lines;
+- the first control update could hang due to nested acquisition of a non-reentrant application lock.
+
+## Diagnosis
+
+The units were bad demo metadata, not an arbitrary scale invented by Neuroglancer. `CoordinateSpace` must carry physical spacing and a unitless channel dimension.
+
+The red/green lines are controlled by viewer state `showAxisLines`; the scale bar by `showScaleBar`. Layout is programmatically controlled by the viewer `layout` state.
+
+At the pinned source revision, supported configuration includes broad/global controls such as `showUIControls`, `showTopBar`, `showLocation`, `showLayerPanel`, help/settings/panel buttons, and panel borders. The two per-panel related-layout buttons are created unconditionally by `registerRelatedLayouts` in `src/data_panel_layout.ts`. There is no granular public state/config flag solely for those buttons. V2 may suppress the broader UI through supported properties and set layout programmatically, but it must not use guessed CSS to remove the remaining buttons.
+
+The deadlock was application structure: code holding one application lock called a helper that attempted to acquire it again. Changing to `RLock` would mask this. V2 snapshots requested state under one ordinary lock, releases it, and then performs one Neuroglancer transaction; helpers used inside that transaction do not acquire the application lock.
+
+## V2 implementation
+
+### Repaired iframe reference
+
+`server.py`:
+
+- creates `(70,2,1024,1024)` ZCYX `uint16` synthetic data;
+- exposes a zero-copy `C,X,Y,Z` transpose view with `c^,x,y,z` coordinate names;
+- declares `0.25 um`, `0.25 um`, and `1.0 um` X/Y/Z spacing;
+- defaults to XY, Z=35, scale bar on, axis lines off;
+- supplies C0 green, C1 magenta, composite, and independent min/max contrast;
+- structurally avoids nested application locks;
+- constrains the iframe to at most about 980 × 570 CSS pixels and responds smaller;
+- polls actual viewer state so native wheel Z is visible separately from requested Z;
+- suppresses only chrome covered by upstream configuration properties.
+
+V2 does not build a polished iframe two-way binding system. The polling readout is a diagnostic experiment because direct JS is the intended architecture.
+
+### First local v2 smoke-test repair
+
+The first local v2 run established that current master removes the local `c^` channel from global navigation position. The actual viewer position is therefore `[x,y,z]`, not `[c,x,y,z]`. The first build incorrectly wrote and read hard-coded position index 3, causing every toolbar POST to fail with `IndexError`; every control was affected because the browser sent the complete form, including Z, for every change.
+
+The repaired reference now declares the global `x,y,z` navigation coordinate space explicitly, resolves Z by dimension name, sends partial control updates, serializes mutations, and publishes requested state only after the Neuroglancer transaction succeeds. Native wheel changes update the actual-Z slider unless it is being dragged. Routine diagnostic polling is omitted from the console access log and rewrites the diagnostics text only when state changes and the user is not selecting it.
+
+### Native controls to smoke-test
+
+- wheel over the panel: change Z;
+- Ctrl+wheel: zoom at the current pointer (modifier behavior may vary by OS/browser input routing);
+- drag: pan;
+- our Z slider: request a specific Z;
+- our scale-bar checkbox: update `showScaleBar`;
+- our axis-lines checkbox: update `showAxisLines`;
+- repeat Z → contrast → channel → Z → toggles many times: every request must return without deadlock.
+
+The scale-bar number and SI prefix may change with zoom. It describes physical distance using the supplied calibration, not viewport pixel count.
+
+### Useful diagnostics
+
+The page reports requested controls, actual position/Z, layout, presentation flags, natural array shape/dtype, coordinate units/scales, and whether the transpose shares memory. This specifically distinguishes our last requested Z from a Z chosen by native Neuroglancer interaction.
+
+## Direct-JS stub history and Phase A
+
+The earlier direct-JS folder was intentionally only a mount/stub; unverified datasource and control methods threw instead of guessing.
+
+V2 Phase A is now an implementation:
+
+```text
+our HTML and controls
+        ↓
+our explicitly sized #ng-viewer div
+        ↓
+NgImageViewer adapter (only unstable-import boundary)
+        ↓
+Neuroglancer current-master JS
+        ↓
+known-supported public precomputed HTTP source
+```
+
+There is no iframe. It demonstrates mounting, source initialization, state diagnostics, scale bar, axis lines, programmatic layout, and supported broad chrome suppression. It intentionally does not implement the custom NumPy-backed datasource. That remains v3 so direct embedding is tested independently of a new transport.
+
+## GitHub-only dependency policy
+
+PyPI is not a fallback. Both Python and JS pin the exact official Git revision. The resolution order is:
+
+1. inspect current official `master`;
+2. verify and pin one exact known-good commit;
+3. examine a branch or pull request only to troubleshoot a concrete upstream issue;
+4. use PyPI only as historical comparison, never as an install source for this project.
+
+The Python dependency uses a PEP 508 Git URL in `pyproject.toml`; the JS dependency uses a GitHub commit reference in `package.json`. Lockfiles are included after clean resolution.
+
+## Current upstream install requirements
+
+At the pinned revision:
+
+- upstream Python metadata requires Python `>=3.11`;
+- upstream's own `.python-version` is 3.13.9;
+- this wrapper pins its verified development interpreter to Python 3.13.8 while permitting 3.11–3.13 (upstream's checkout independently names 3.13.9);
+- installing Python Neuroglancer from remote Git requires Node.js and a C++ compiler because the client and native mesh extension may be built;
+- the JS package declares Node `>=22.18`;
+- a first GitHub build can take appreciable time and should not be described as an unexplained stall.
+
+Consuming the Python Git dependency with `uv sync` does not require a manual Neuroglancer clone. Clone upstream only for editable upstream development, source modification, or its watch build.
+
+## Branch/PR troubleshooting policy
+
+Do not float to an arbitrary branch because it appears newer. Reproduce a concrete issue at the pinned commit, identify the relevant upstream change/PR, test that exact ref in isolation, record the evidence, and only then consider changing the pin. A new pin must be captured in both dependency files and regenerated lockfiles.
+
+## Open questions after v2
+
+- Does the pinned Git Python build complete cleanly on the target macOS/CPU toolchain, and how long is its first build?
+- Does native wheel interaction update Python-observed state reliably under repeated use?
+- Are the public-source direct-JS imports and `NgImageViewer` calls still correct in the clean target browser/toolchain?
+- Is broad `showUIControls=false` acceptable, or should a later direct integration retain selected native controls?
+- Should v3 use an already-supported HTTP format (likely Zarr/OME-Zarr) or a purpose-built custom datasource for arbitrary NumPy subarrays?
+- What chunk shape, downsampling, caching, cancellation, and dtype policy should the v3 transport use?
+
+## V3 — deliberately not implemented
+
+V3 keeps the direct `NgImageViewer`, replaces the public source with a Python-owned NumPy HTTP datasource, and lets Neuroglancer own viewport state, chunk scheduling/cache, GPU upload, shaders, and rendering. It must be designed only after Phase A behavior is verified.
+
+## Clean-room install and run
+
+From a fresh unzip, with Git, `uv`, compiler tools, and a suitable Node available:
+
+```bash
+cd ng-array-demo
+uv sync --frozen
+uv run python server.py
+```
+
+Visit `http://127.0.0.1:8000`, exercise all controls repeatedly, then use wheel and Ctrl+wheel inside the iframe while watching diagnostics.
+
+For Phase A:
+
+```bash
+cd direct-js
+npm ci
+npm run dev
+```
+
+Open the printed local URL, confirm the public FIB-25 image loads, toggle scale bar and axis lines, and switch layouts. Then run the production build check:
+
+```bash
+npm run build
+```
+
+If clean-room installation or runtime fails, preserve the complete terminal/browser-console error and the pinned commit. Do not silently substitute PyPI or patch Neuroglancer CSS.

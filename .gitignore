@@ -1,0 +1,48 @@
+# macOS
+.DS_Store
+
+# Python environments and local environment files
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Python bytecode, caches, tests, and coverage
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+htmlcov/
+
+# Python packaging outputs
+build/
+dist/
+*.egg-info/
+
+# JavaScript dependencies, caches, and build outputs
+node_modules/
+direct-js/dist/
+direct-js/.vite/
+.npm/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Editors and temporary files
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# Local logs and scratch files
+*.log
+tmp/
+temp/

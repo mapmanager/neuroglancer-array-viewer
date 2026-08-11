@@ -1,0 +1,11 @@
+{
+  "name": "ng-array-demo-direct-js-phase-a",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": { "dev": "vite", "build": "vite build", "preview": "vite preview" },
+  "dependencies": {
+    "neuroglancer": "github:google/neuroglancer#576c94b08ad7609919eb42f8a93b9cf0e161df14"
+  },
+  "devDependencies": { "vite": "^7.1.1" }
+}

@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>ng-array-demo v2 — iframe reference</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <main>
+      <header>
+        <div><span class="eyebrow">FIRST DEVELOPMENT VERSION · V2</span><h1>NumPy → Neuroglancer iframe reference</h1></div>
+        <span id="status" class="status">Starting…</span>
+      </header>
+      <section class="controls" aria-label="Viewer controls">
+        <fieldset><legend>Display</legend>
+          <label><input type="radio" name="mode" value="c0" /> C0 green</label>
+          <label><input type="radio" name="mode" value="c1" /> C1 magenta</label>
+          <label><input type="radio" name="mode" value="composite" checked /> Composite</label>
+        </fieldset>
+        <fieldset class="z-control"><legend>Z slice</legend>
+          <input id="z" type="range" min="0" max="69" value="35" /><output id="z-value">35</output>
+        </fieldset>
+        <fieldset><legend>NG presentation</legend>
+          <label><input id="scale-bar" type="checkbox" checked /> Scale bar</label>
+          <label><input id="axis-lines" type="checkbox" /> Axis lines</label>
+        </fieldset>
+        <fieldset class="contrast"><legend>Contrast (uint16)</legend>
+          <label>C0 min <input id="c0-min" type="number" min="0" max="65535" value="0" /></label>
+          <label>C0 max <input id="c0-max" type="number" min="0" max="65535" value="55000" /></label>
+          <label>C1 min <input id="c1-min" type="number" min="0" max="65535" value="0" /></label>
+          <label>C1 max <input id="c1-max" type="number" min="0" max="65535" value="55000" /></label>
+        </fieldset>
+      </section>
+      <div class="viewer-shell"><iframe id="viewer" title="Neuroglancer image viewer"></iframe></div>
+      <p class="hint"><strong>Native NG:</strong> wheel changes Z; Ctrl+wheel zooms at the pointer; drag pans. Our requested Z and actual viewer Z are intentionally shown separately.</p>
+      <details open><summary>Development diagnostics</summary><pre id="diagnostics">Waiting…</pre></details>
+    </main>
+    <script type="module" src="viewer.js"></script>
+  </body>
+</html>
