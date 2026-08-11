@@ -9,6 +9,12 @@ npm ci
 npm run dev
 ```
 
+To test the first NumPy transport milestone, start its Python data server from the project root in another terminal before selecting `Python/NumPy demo`:
+
+```bash
+uv run python direct_numpy_server.py
+```
+
 Node.js 22.18 or newer is required by this Neuroglancer revision. The public source requires network access and WebGL2. Its metadata describes a single-channel `uint8` electron-microscopy image with X/Y/Z dimensions, 8 nm isotropic voxels at full resolution, and a full-resolution shape of 6446 × 6643 × 8090. It has no C or T dimension.
 
 `vite.config.js` deliberately excludes Neuroglancer from Vite's development dependency optimizer and routes its pinned backend worker through `src/ng-chunk-worker.js`. Neuroglancer locates that worker beside an upstream module with `import.meta.url`; without the explicit project entry Vite does not bundle the dependency-owned worker correctly, metadata loads but pixel chunks are never requested, and the viewer remains gray. The configuration also prebundles the specific CommonJS modules imported by the frontend and worker graphs.
@@ -21,4 +27,8 @@ Neuroglancer's default-viewer stylesheet assumes it owns the full page and sets 
 
 Expected Phase A diagnostics are `directMount: true`, `iframeCount: 0`, and a layer whose datasource state changes from `loading` to `loaded` with at least one render layer. The initial position and zoom come from upstream's published FIB-25 example. If the public source cannot be reached, the concrete datasource error is shown there.
 
-Phase A intentionally has no channel, color, contrast, or dataset controls: those would be misleading for this single-channel public source. They return only after the custom Python/NumPy datasource is designed and direct embedding is stable.
+Phase A intentionally has no NumPy-derived channel, color, contrast, or multi-NumPy-dataset controls. The datasource selector only switches between the public Phase A reference and the first fixed NumPy transport proof.
+
+The optional Python/NumPy preset is the first transport milestone. Python owns the existing synthetic Dataset A as a `uint16` NumPy array in C,X,Y,Z order and exposes it through the pinned upstream `python://volume/...` protocol. Vite proxies the protocol endpoints to `127.0.0.1:8001`, keeping worker requests same-origin. The two channels render green and magenta through a fixed validation shader. This milestone deliberately tests only one array; runtime dataset replacement and generated channel/contrast controls come next.
+
+NPZ is used for chunk encoding because the pinned upstream raw Python encoder still calls NumPy's removed `ndarray.tostring()` method. We do not patch the Git dependency.

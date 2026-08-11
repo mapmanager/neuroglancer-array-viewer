@@ -45,4 +45,10 @@ npm run dev
 
 Open the Vite URL it prints. This is a direct mount into our `<div>` with no iframe. Its custom toolbar switches among XY, XY + 3D, 4-panel, and 3D layouts and can float at three viewer edges or sit outside the viewer. It requires internet access for the public demonstration datasource. See `direct-js/README.md`.
 
+For the optional first NumPy transport milestone, run this from the project root in another terminal, then select `Python/NumPy demo` in the direct page:
+
+```bash
+uv run python direct_numpy_server.py
+```
+
 For the full design record and clean-room checklist, read `roadmap-dev-ng.md`.

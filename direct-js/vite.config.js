@@ -1,6 +1,17 @@
 import {defineConfig} from "vite";
 
+const numpyProxy = {
+  "/neuroglancer": "http://127.0.0.1:8001",
+  "/api/health": "http://127.0.0.1:8001",
+};
+
 export default defineConfig({
+  server: {
+    proxy: numpyProxy,
+  },
+  preview: {
+    proxy: numpyProxy,
+  },
   plugins: [{
     name: "neuroglancer-chunk-worker-entry",
     enforce: "pre",

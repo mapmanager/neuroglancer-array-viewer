@@ -1,8 +1,32 @@
 import "neuroglancer";
+import "neuroglancer/unstable/datasource/python/register_default.js";
 import { setupDefaultViewer } from "neuroglancer/unstable/ui/default_viewer_setup.js";
 
 export const PUBLIC_SOURCE = "precomputed://gs://neuroglancer-public-data/flyem_fib-25/image";
+export const NUMPY_SOURCE = "python://volume/direct-demo";
 export const SUPPORTED_LAYOUTS = new Set(["xy", "xy-3d", "4panel-alt", "3d"]);
+
+const SOURCE_PRESETS = {
+  public: {
+    source: PUBLIC_SOURCE,
+    name: "FIB-25 public image",
+    dimensions: {x:[8e-9,"m"], y:[8e-9,"m"], z:[8e-9,"m"]},
+    position: [2980.1868, 3153.9294, 4045],
+    crossSectionScale: 2.886371,
+  },
+  numpy: {
+    source: NUMPY_SOURCE,
+    name: "Python NumPy · Dataset A",
+    dimensions: {x:[0.25,"um"], y:[0.25,"um"], z:[1,"um"]},
+    position: [512, 512, 35],
+    crossSectionScale: 1,
+    shader: `void main() {
+  float c0 = toNormalized(getDataValue(0));
+  float c1 = toNormalized(getDataValue(1));
+  emitRGB(clamp(c0 * vec3(0.0, 1.0, 0.0) + c1 * vec3(1.0, 0.0, 1.0), 0.0, 1.0));
+}`,
+  },
+};
 
 /** Our narrow adapter: this is the only module that imports unstable NG internals. */
 export class NgImageViewer {
@@ -37,20 +61,23 @@ export class NgImageViewer {
     });
   }
 
-  setSource(source = PUBLIC_SOURCE) {
-    this.source = source;
+  setSource(presetName = "public") {
+    const preset = SOURCE_PRESETS[presetName];
+    if (!preset) throw new Error(`Unknown datasource preset: ${presetName}`);
+    this.presetName = presetName;
+    this.source = preset.source;
     this.currentLayout = "xy";
     // Configure supported UI visibility before restoring asynchronous layer
     // state. Changing it immediately after restore can leave the newly loaded
     // render source unattached until another viewer configuration change.
     this.hideSupportedChrome();
     this.viewer.state.restoreState({
-      dimensions: {x:[8e-9,"m"], y:[8e-9,"m"], z:[8e-9,"m"]},
+      dimensions: preset.dimensions,
       // This position and scale are taken from upstream's published FIB-25
       // example rather than inferred from the volume bounds.
-      position: [2980.1868, 3153.9294, 4045],
-      crossSectionScale: 2.886371,
-      layers: [{type:"image", source, name:"FIB-25 public image"}],
+      position: preset.position,
+      crossSectionScale: preset.crossSectionScale,
+      layers: [{type:"image", source:preset.source, name:preset.name, shader:preset.shader}],
       layout: "xy",
       showScaleBar: true,
       showAxisLines: false,
@@ -125,7 +152,8 @@ export class NgImageViewer {
       // State changes are emitted during layout replacement. Keep the last stable value.
     }
     return {
-      phase: "Direct-JS Phase A",
+      phase: this.presetName === "numpy" ? "Direct-JS NumPy transport milestone" : "Direct-JS Phase A",
+      datasourcePreset: this.presetName ?? "public",
       source: this.source ?? PUBLIC_SOURCE,
       directMount: true,
       iframeCount: this.target.querySelectorAll("iframe").length,
@@ -140,8 +168,9 @@ export class NgImageViewer {
       chunkWorkerError: this.workerError,
       limitations: [
         "The native per-panel related-layout buttons have no granular supported visibility flag at this pinned revision.",
-        "Phase A uses an upstream-supported public HTTP datasource.",
-        "NumPy transport and NumPy-derived channel/contrast controls are deferred until the custom datasource milestone."
+        "The public preset uses an upstream-supported public datasource.",
+        "The NumPy preset uses upstream's Python datasource protocol through a local same-origin proxy.",
+        "Dataset replacement and NumPy-derived channel/contrast controls remain deferred until transport smoke testing passes."
       ]
     };
   }

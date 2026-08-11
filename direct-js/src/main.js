@@ -24,7 +24,7 @@ function render(value) {
 
 const adapter = new NgImageViewer($("#ng-viewer"), render);
 window.ngArrayDemo = {adapter};
-adapter.setSource();
+adapter.setSource("public");
 render(adapter.getDiagnostics());
 
 $("#layout-chrome").addEventListener("click", (event) => {
@@ -34,10 +34,11 @@ $("#layout-chrome").addEventListener("click", (event) => {
 $("#placement").addEventListener("change", (event) => {
   $("#viewer-stage").className = `viewer-stage placement-${event.target.value}`;
 });
+$("#datasource").addEventListener("change", (event) => adapter.setSource(event.target.value));
 $("#z").addEventListener("focus", () => { editingZ = true; });
 $("#z").addEventListener("blur", () => { editingZ = false; });
 $("#z").addEventListener("input", (event) => adapter.setZ(event.target.value));
 $("#scale-bar").addEventListener("change", (event) => adapter.setScaleBar(event.target.checked));
 $("#axis-lines").addEventListener("change", (event) => adapter.setAxisLines(event.target.checked));
-$("#reset").addEventListener("click", () => adapter.setSource());
+$("#reset").addEventListener("click", () => adapter.setSource($("#datasource").value));
 window.addEventListener("beforeunload", () => adapter.dispose());

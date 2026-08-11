@@ -156,9 +156,13 @@ Do not float to an arbitrary branch because it appears newer. Reproduce a concre
 - Should v3 use an already-supported HTTP format (likely Zarr/OME-Zarr) or a purpose-built custom datasource for arbitrary NumPy subarrays?
 - What chunk shape, downsampling, caching, cancellation, and dtype policy should the v3 transport use?
 
-## V3 — deliberately not implemented
+## V3 — NumPy transport milestone started
 
-V3 keeps the direct `NgImageViewer`, replaces the public source with a Python-owned NumPy HTTP datasource, and lets Neuroglancer own viewport state, chunk scheduling/cache, GPU upload, shaders, and rendering. It must be designed only after Phase A behavior is verified.
+After Phase A passed, the first V3 milestone kept the direct `NgImageViewer` and added an optional Python-owned NumPy datasource. It deliberately reuses upstream's registered `python://volume/...` frontend/backend and `LocalVolume` metadata/chunk implementation rather than inventing a parallel JS datasource API. A small Python server owns synthetic Dataset A, while Vite proxies same-origin protocol requests to it.
+
+The milestone preserves C,X,Y,Z rank, two channels, `uint16`, and 0.25 × 0.25 × 1.0 µm calibration. A fixed green/magenta shader validates both channels. NPZ transport is used because the pinned raw Python encoder calls the NumPy-removed `ndarray.tostring()` method; upstream is not patched. Verified results include loaded source state, a healthy chunk worker, nine active/nonempty chunk sources, and visible two-channel pixels.
+
+This is intentionally not yet the full V3 workflow. Next work is atomic replacement among multiple unique NumPy arrays, cache/generation invalidation, cancellation/race testing, and only then dynamic channel/color/contrast controls.
 
 ## Clean-room install and run
 
@@ -178,6 +182,12 @@ For Phase A:
 cd direct-js
 npm ci
 npm run dev
+```
+
+For the NumPy transport preset, also run from the project root:
+
+```bash
+uv run python direct_numpy_server.py
 ```
 
 Open the printed local URL and confirm diagnostics report `directMount: true`, `iframeCount: 0`, plus a `loaded` datasource and a nonzero render-layer count. Confirm the public FIB-25 image loads; use wheel and the Z number control in both directions; toggle scale bar and axis lines; select all four layouts and return to XY; and move our layout chrome to top, left, bottom, and outside. Then run the production build check:
