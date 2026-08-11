@@ -1,8 +1,11 @@
 import {defineConfig} from "vite";
 
+const numpyServer = process.env.NG_ARRAY_DEMO_NUMPY_SERVER ?? "http://127.0.0.1:8001";
 const numpyProxy = {
-  "/neuroglancer": "http://127.0.0.1:8001",
-  "/api/health": "http://127.0.0.1:8001",
+  "/neuroglancer": numpyServer,
+  "/api/health": numpyServer,
+  "/api/view-state": numpyServer,
+  "/api/dataset": numpyServer,
 };
 
 export default defineConfig({

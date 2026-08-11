@@ -41,10 +41,16 @@
         <nav id="layout-chrome" class="layout-chrome" aria-label="Viewer layout">
           <span class="chrome-title">Layout</span>
           <button type="button" data-layout="xy">XY</button>
+          <button type="button" data-layout="channels-row">Channels side-by-side</button>
+          <button type="button" data-layout="channels-column">Channels stacked</button>
           <button type="button" data-layout="xy-3d">XY + 3D</button>
           <button type="button" data-layout="4panel-alt">4 panel</button>
           <button type="button" data-layout="3d">3D</button>
         </nav>
+        <aside id="channel-chrome" class="channel-chrome" aria-label="Channel display controls">
+          <button id="channel-toggle" class="channel-toggle" type="button" aria-expanded="true">Channels</button>
+          <div id="channel-controls" class="channel-controls"></div>
+        </aside>
         <div id="ng-viewer" aria-label="Directly embedded Neuroglancer viewer"></div>
       </section>
 

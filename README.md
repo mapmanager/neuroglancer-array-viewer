@@ -43,7 +43,7 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL it prints. This is a direct mount into our `<div>` with no iframe. Its custom toolbar switches among XY, XY + 3D, 4-panel, and 3D layouts and can float at three viewer edges or sit outside the viewer. It requires internet access for the public demonstration datasource. See `direct-js/README.md`.
+Open the Vite URL it prints. This is a direct mount into our `<div>` with no iframe. Its custom toolbar includes composite XY, one-XY-panel-per-channel side-by-side and stacked layouts, XY + 3D, 4-panel, and 3D. A right-side overlay provides per-channel LUT color and linked slider/number contrast controls. It requires internet access only for the public demonstration datasource. See `direct-js/README.md`.
 
 AcqStore is an optional demo/loading dependency, not a core Neuroglancer viewer dependency. The current local AcqStore checkout requires Python 3.12 or newer. Install the optional editable sibling integration with:
 
@@ -57,8 +57,10 @@ For the NumPy transport milestones, run this from the project root in another te
 uv run --extra acqstore-demo python direct_numpy_server.py
 ```
 
-The direct selector includes the original A/B/C arrays, two long Gaussian-band AcqImage synthetics (`C,Y,X = 2,50000,1024` and `1,30000,100`), and the `rr30a-two-channel` AcqStore sample. The server creates volumes lazily. Selecting rr30a calls `ensure_sample_file`, downloads and caches it when absent, then opens the local path with `AcqImage`.
+The direct selector includes the original A/B/C arrays, two long Gaussian-band AcqImage synthetics (`C,Y,X = 2,50000,1024` and `1,30000,100`), and the `rr30a-two-channel` AcqStore sample. The server creates volumes lazily. Selecting rr30a calls `ensure_sample_file`, downloads and caches it when absent, then opens the local path with `AcqImage`. The server calculates each materialized channel's exact observed minimum and maximum once; those values initialize both the contrast controls and shader mapping instead of assuming the entire uint16 domain is occupied.
 
-Before transport, each AcqImage `(Y,X)` plane is transposed and flipped along the new display-Y axis. The long source-Y dimension therefore becomes horizontal Neuroglancer X; X/Y calibration and units are swapped with the data orientation.
+Before transport, each AcqImage `(Y,X)` plane is transposed and flipped along the new display-Y axis. The long source-Y dimension therefore becomes horizontal Neuroglancer X; X/Y calibration and units are swapped with the data orientation. The long sources use `0.002 s` per displayed-X sample and `0.25 um` per displayed-Y sample. Neuroglancer's coordinate-space scales preserve their non-square physical aspect, and the adapter initially fits that calibrated extent into the XY panel.
+
+The direct adapter publishes view-state snapshots through `getViewState()` and `subscribeViewState()`, including named index position, calibrated physical position, and both index and physical XY ranges for every slice panel. The optional Python server receives coalesced snapshots at `/api/view-state` and exposes non-blocking callbacks through `ViewStateDispatcher.subscribe()`. Its example `log_view_state()` subscriber logs dataset, layout, calibrated Z, and calibrated XY bounds with source file, function, and line context.
 
 For the full design record and clean-room checklist, read `roadmap-dev-ng.md`.
