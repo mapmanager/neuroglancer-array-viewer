@@ -162,7 +162,9 @@ After Phase A passed, the first V3 milestone kept the direct `NgImageViewer` and
 
 The milestone preserves C,X,Y,Z rank, two channels, `uint16`, and 0.25 × 0.25 × 1.0 µm calibration. A fixed green/magenta shader validates both channels. NPZ transport is used because the pinned raw Python encoder calls the NumPy-removed `ndarray.tostring()` method; upstream is not patched. Verified results include loaded source state, a healthy chunk worker, nine active/nonempty chunk sources, and visible two-channel pixels.
 
-This is intentionally not yet the full V3 workflow. Next work is atomic replacement among multiple unique NumPy arrays, cache/generation invalidation, cancellation/race testing, and only then dynamic channel/color/contrast controls.
+The next V3 milestone now exposes synthetic A/B/C as three distinct Python datasource URLs. They deliberately differ in shape, channel count, pixels, and physical calibration. The adapter replaces the complete viewer state in one restore operation, resetting source, coordinate space, centered position, shader, and layout together. Repeated switching has distinct source identities, so old chunks cannot be mistaken for the newly selected dataset.
+
+Next work is replacement stress/race testing and dynamic NumPy-derived channel/color/contrast controls. AcqStore/AcqImage integration will follow from a sibling local-source checkout after this synthetic boundary is stable; the transport server should consume AcqImage metadata and arrays without coupling the viewer adapter to file loading. A broad unit-test suite is intentionally deferred during rapid API shaping, but stable metadata, bounds, and state-generation invariants should receive focused tests before AcqStore integration expands the surface.
 
 ## Clean-room install and run
 

@@ -2,14 +2,14 @@
 
 This experiment imports the exact same pinned Neuroglancer GitHub commit as the Python project and mounts it into our `#ng-viewer` div through an `NgImageViewer` adapter. It uses no iframe.
 
-It deliberately uses the official public FIB-25 precomputed datasource through Neuroglancer's canonical Google Cloud Storage URL. This isolates direct embedding and viewer control from the future custom NumPy transport. The latter is deferred to v3.
+It retains the official public FIB-25 precomputed datasource as a direct-embedding reference and now also exposes three Python-owned synthetic NumPy datasets through Neuroglancer's upstream Python datasource protocol.
 
 ```bash
 npm ci
 npm run dev
 ```
 
-To test the first NumPy transport milestone, start its Python data server from the project root in another terminal before selecting `Python/NumPy demo`:
+To test NumPy transport and replacement, start its Python data server from the project root in another terminal before selecting a NumPy dataset:
 
 ```bash
 uv run python direct_numpy_server.py
@@ -27,8 +27,8 @@ Neuroglancer's default-viewer stylesheet assumes it owns the full page and sets 
 
 Expected Phase A diagnostics are `directMount: true`, `iframeCount: 0`, and a layer whose datasource state changes from `loading` to `loaded` with at least one render layer. The initial position and zoom come from upstream's published FIB-25 example. If the public source cannot be reached, the concrete datasource error is shown there.
 
-Phase A intentionally has no NumPy-derived channel, color, contrast, or multi-NumPy-dataset controls. The datasource selector only switches between the public Phase A reference and the first fixed NumPy transport proof.
+The datasource selector switches between the public Phase A reference and three NumPy arrays with different shapes, channel counts, pixels, and physical calibration. Each selection restores one complete viewer state, including source, coordinate space, centered position, shader, and layout.
 
-The optional Python/NumPy preset is the first transport milestone. Python owns the existing synthetic Dataset A as a `uint16` NumPy array in C,X,Y,Z order and exposes it through the pinned upstream `python://volume/...` protocol. Vite proxies the protocol endpoints to `127.0.0.1:8001`, keeping worker requests same-origin. The two channels render green and magenta through a fixed validation shader. This milestone deliberately tests only one array; runtime dataset replacement and generated channel/contrast controls come next.
+Python owns the existing synthetic datasets as `uint16` NumPy arrays in C,X,Y,Z order and exposes each through a distinct pinned-upstream `python://volume/...` URL. Vite proxies the protocol endpoints to `127.0.0.1:8001`, keeping worker requests same-origin. Fixed dataset-specific shaders validate all 2/1/3 channels. Dynamic NumPy-derived channel/color/contrast controls come next.
 
 NPZ is used for chunk encoding because the pinned upstream raw Python encoder still calls NumPy's removed `ndarray.tostring()` method. We do not patch the Git dependency.

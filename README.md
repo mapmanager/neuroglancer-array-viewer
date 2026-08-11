@@ -2,7 +2,7 @@
 
 Fresh, standalone v2 Neuroglancer experiments. There is no CloudScope, NiceWidgets, or NiceGUI.
 
-The default demo is a repaired Python `LocalVolume` reference displayed in an iframe controlled by our own page. A separate `direct-js/` Phase A mounts Neuroglancer directly into our `<div>` and uses a known-supported public HTTP datasource. The direct-JS demo intentionally does not yet expose the NumPy array; that custom datasource is v3 work.
+The default demo is a repaired Python `LocalVolume` reference displayed in an iframe controlled by our own page. A separate `direct-js/` app mounts Neuroglancer directly into our `<div>`. It can show the known-supported public FIB-25 source or any of three synthetic Python-owned NumPy datasets.
 
 ## Prerequisites
 
@@ -45,7 +45,7 @@ npm run dev
 
 Open the Vite URL it prints. This is a direct mount into our `<div>` with no iframe. Its custom toolbar switches among XY, XY + 3D, 4-panel, and 3D layouts and can float at three viewer edges or sit outside the viewer. It requires internet access for the public demonstration datasource. See `direct-js/README.md`.
 
-For the optional first NumPy transport milestone, run this from the project root in another terminal, then select `Python/NumPy demo` in the direct page:
+For the NumPy transport milestones, run this from the project root in another terminal, then select Dataset A, B, or C in the direct page:
 
 ```bash
 uv run python direct_numpy_server.py

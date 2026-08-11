@@ -3,7 +3,7 @@ import "neuroglancer/unstable/datasource/python/register_default.js";
 import { setupDefaultViewer } from "neuroglancer/unstable/ui/default_viewer_setup.js";
 
 export const PUBLIC_SOURCE = "precomputed://gs://neuroglancer-public-data/flyem_fib-25/image";
-export const NUMPY_SOURCE = "python://volume/direct-demo";
+export const NUMPY_SOURCE_PREFIX = "python://volume/direct-demo-";
 export const SUPPORTED_LAYOUTS = new Set(["xy", "xy-3d", "4panel-alt", "3d"]);
 
 const SOURCE_PRESETS = {
@@ -14,9 +14,10 @@ const SOURCE_PRESETS = {
     position: [2980.1868, 3153.9294, 4045],
     crossSectionScale: 2.886371,
   },
-  numpy: {
-    source: NUMPY_SOURCE,
+  "numpy-a": {
+    source: `${NUMPY_SOURCE_PREFIX}a`,
     name: "Python NumPy · Dataset A",
+    dataset: {key:"a", shapeZCYX:[70,2,1024,1024], scalesUm:[0.25,0.25,1]},
     dimensions: {x:[0.25,"um"], y:[0.25,"um"], z:[1,"um"]},
     position: [512, 512, 35],
     crossSectionScale: 1,
@@ -24,6 +25,32 @@ const SOURCE_PRESETS = {
   float c0 = toNormalized(getDataValue(0));
   float c1 = toNormalized(getDataValue(1));
   emitRGB(clamp(c0 * vec3(0.0, 1.0, 0.0) + c1 * vec3(1.0, 0.0, 1.0), 0.0, 1.0));
+}`,
+  },
+  "numpy-b": {
+    source: `${NUMPY_SOURCE_PREFIX}b`,
+    name: "Python NumPy · Dataset B",
+    dataset: {key:"b", shapeZCYX:[31,1,512,768], scalesUm:[0.65,0.40,2.5]},
+    dimensions: {x:[0.65,"um"], y:[0.40,"um"], z:[2.5,"um"]},
+    position: [384, 256, 15],
+    crossSectionScale: 1,
+    shader: `void main() {
+  float c0 = toNormalized(getDataValue(0));
+  emitRGB(c0 * vec3(0.0, 0.75, 1.0));
+}`,
+  },
+  "numpy-c": {
+    source: `${NUMPY_SOURCE_PREFIX}c`,
+    name: "Python NumPy · Dataset C",
+    dataset: {key:"c", shapeZCYX:[18,3,640,384], scalesUm:[0.18,0.55,0.8]},
+    dimensions: {x:[0.18,"um"], y:[0.55,"um"], z:[0.8,"um"]},
+    position: [192, 320, 9],
+    crossSectionScale: 1,
+    shader: `void main() {
+  float c0 = toNormalized(getDataValue(0));
+  float c1 = toNormalized(getDataValue(1));
+  float c2 = toNormalized(getDataValue(2));
+  emitRGB(clamp(c0 * vec3(1.0, 0.23, 0.19) + c1 * vec3(0.2, 0.78, 0.35) + c2 * vec3(0.04, 0.52, 1.0), 0.0, 1.0));
 }`,
   },
 };
@@ -152,9 +179,12 @@ export class NgImageViewer {
       // State changes are emitted during layout replacement. Keep the last stable value.
     }
     return {
-      phase: this.presetName === "numpy" ? "Direct-JS NumPy transport milestone" : "Direct-JS Phase A",
+      phase: this.presetName?.startsWith("numpy-")
+        ? "Direct-JS multi-NumPy replacement milestone"
+        : "Direct-JS Phase A",
       datasourcePreset: this.presetName ?? "public",
       source: this.source ?? PUBLIC_SOURCE,
+      dataset: SOURCE_PRESETS[this.presetName]?.dataset ?? null,
       directMount: true,
       iframeCount: this.target.querySelectorAll("iframe").length,
       zAxisIndex: this.getZAxisIndex(),
@@ -170,7 +200,8 @@ export class NgImageViewer {
         "The native per-panel related-layout buttons have no granular supported visibility flag at this pinned revision.",
         "The public preset uses an upstream-supported public datasource.",
         "The NumPy preset uses upstream's Python datasource protocol through a local same-origin proxy.",
-        "Dataset replacement and NumPy-derived channel/contrast controls remain deferred until transport smoke testing passes."
+        "Synthetic NumPy datasets are replaced as complete viewer states; rendered-pixel completion has no supported ready event.",
+        "NumPy-derived channel/contrast controls remain deferred to the next milestone."
       ]
     };
   }
