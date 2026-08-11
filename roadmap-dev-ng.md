@@ -67,6 +67,18 @@ The first local v2 run established that current master removes the local `c^` ch
 
 The repaired reference now declares the global `x,y,z` navigation coordinate space explicitly, resolves Z by dimension name, sends partial control updates, serializes mutations, and publishes requested state only after the Neuroglancer transaction succeeds. Native wheel changes update the actual-Z slider unless it is being dragged. Routine diagnostic polling is omitted from the console access log and rewrites the diagnostics text only when state changes and the user is not selecting it.
 
+The same smoke test also exposed a shader API mismatch: current master represents a `uint16` sample with its own GLSL `uint16_t`, so an ordinary `float(getDataValue(...))` conversion is invalid and left the default grayscale rendering visible. The shader now follows the pinned upstream API exactly with `toNormalized(getDataValue(channel))`, applies normalized uint16 min/max contrast, and multiplies each channel by a user-selectable RGB color. C0 is a moving filled circle/ramp (green by default); C1 is a moving square ring/diagonal-stripe pattern (magenta by default); composite adds both.
+
+### Multiple-dataset iframe milestone
+
+The final iframe milestone keeps one Viewer and iframe URL alive while atomically replacing all dataset-dependent state: NumPy array, `LocalVolume`, layer source/shader, global coordinate space, calibration, centered position, Z bounds, channel count, colors, contrast, and dynamic toolbar controls. Presentation toggles persist across swaps; dataset-specific navigation and channel settings reset to safe defaults.
+
+- A: `70Z × 2C × 1024Y × 1024X`, `0.25 × 0.25 × 1.0 µm`, circle/ramp plus ring/stripes.
+- B: `31Z × 1C × 512Y × 768X`, `0.65 × 0.40 × 2.5 µm`, diamond plus vertical bars.
+- C: `18Z × 3C × 640Y × 384X`, `0.18 × 0.55 × 0.8 µm`, disk, rectangle, and horizontal bands.
+
+Automated browser verification covered A/B/C rendering, dynamic 2/1/3-channel controls, centered Z resets, changed scale bars, nine repeated swaps with a stable iframe URL, and a rapid dataset/Z race ending in consistent requested, actual, and slider state. Retired NumPy arrays were confirmed garbage-collected after replacement.
+
 ### Native controls to smoke-test
 
 - wheel over the panel: change Z;
@@ -101,7 +113,11 @@ Neuroglancer current-master JS
 known-supported public precomputed HTTP source
 ```
 
-There is no iframe. It demonstrates mounting, source initialization, state diagnostics, scale bar, axis lines, programmatic layout, and supported broad chrome suppression. It intentionally does not implement the custom NumPy-backed datasource. That remains v3 so direct embedding is tested independently of a new transport.
+There is no iframe. It demonstrates mounting, source initialization, datasource load/render diagnostics, scale bar, axis lines, bidirectional Z state, programmatic layout, and supported broad chrome suppression. Our own layout chrome switches between `xy`, `xy-3d`, `4panel-alt`, and `3d`, restores the default XY view explicitly, and can be placed over the viewer's top/left/bottom edge or outside the viewer. The adapter uses the verified `viewer.layout.restoreState(...)` API rather than simulating clicks on native chrome.
+
+Phase A deliberately omits channel/color/contrast and dataset-selection controls because the public FIB-25 source is single-channel and those controls belong to NumPy dataset semantics. It intentionally does not implement the custom NumPy-backed datasource. That remains v3 so direct embedding is tested independently of a new transport.
+
+Direct-embedding smoke testing exposed two integration-specific failures. Neuroglancer's full-page stylesheet disabled scrolling on the wrapper document; v2 now restores overflow only on the demo page. More importantly, Vite did not correctly bundle Neuroglancer's dependency-owned backend worker: metadata and render layers initialized, but the worker exited before requesting pixel chunks. V2 now routes the exact pinned worker entry through a project-owned Vite entry and prebundles its CommonJS CRC dependency. Verification confirmed a responsive worker, seven multiscale chunk sources, downloaded chunks, and visible FIB-25 electron-microscopy pixels.
 
 ## GitHub-only dependency policy
 
@@ -135,7 +151,7 @@ Do not float to an arbitrary branch because it appears newer. Reproduce a concre
 
 - Does the pinned Git Python build complete cleanly on the target macOS/CPU toolchain, and how long is its first build?
 - Does native wheel interaction update Python-observed state reliably under repeated use?
-- Are the public-source direct-JS imports and `NgImageViewer` calls still correct in the clean target browser/toolchain?
+- Does the public FIB-25 source load from the target network? The adapter now reports datasource `loading`, `loaded`, or `error` state rather than leaving a gray canvas unexplained.
 - Is broad `showUIControls=false` acceptable, or should a later direct integration retain selected native controls?
 - Should v3 use an already-supported HTTP format (likely Zarr/OME-Zarr) or a purpose-built custom datasource for arbitrary NumPy subarrays?
 - What chunk shape, downsampling, caching, cancellation, and dtype policy should the v3 transport use?
@@ -164,7 +180,7 @@ npm ci
 npm run dev
 ```
 
-Open the printed local URL, confirm the public FIB-25 image loads, toggle scale bar and axis lines, and switch layouts. Then run the production build check:
+Open the printed local URL and confirm diagnostics report `directMount: true`, `iframeCount: 0`, plus a `loaded` datasource and a nonzero render-layer count. Confirm the public FIB-25 image loads; use wheel and the Z number control in both directions; toggle scale bar and axis lines; select all four layouts and return to XY; and move our layout chrome to top, left, bottom, and outside. Then run the production build check:
 
 ```bash
 npm run build

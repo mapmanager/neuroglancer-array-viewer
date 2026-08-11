@@ -31,6 +31,8 @@ Native Neuroglancer controls inside the image:
 
 The diagnostics distinguish our last requested Z from Neuroglancer's actual state, so native wheel interaction is observable even though v2 does not attempt a polished two-way toolbar.
 
+The Dataset selector atomically swaps complete synthetic datasets without replacing the iframe. Dataset A has 70Z/2C/1024² data, Dataset B has 31Z/1C/512×768 data, and Dataset C has 18Z/3C/640×384 data. Each has distinct pixels, physical calibration, Z limits, channel controls, colors, and contrast state.
+
 ## Direct-JS Phase A
 
 In a second terminal:
@@ -41,6 +43,6 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL it prints. This is a direct mount into our `<div>` with no iframe. It requires internet access for the public demonstration datasource. See `direct-js/README.md`.
+Open the Vite URL it prints. This is a direct mount into our `<div>` with no iframe. Its custom toolbar switches among XY, XY + 3D, 4-panel, and 3D layouts and can float at three viewer edges or sit outside the viewer. It requires internet access for the public demonstration datasource. See `direct-js/README.md`.
 
 For the full design record and clean-room checklist, read `roadmap-dev-ng.md`.

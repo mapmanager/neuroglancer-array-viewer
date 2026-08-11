@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import copy
 import json
+import re
 import threading
 import time
 import webbrowser
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from http import HTTPStatus
 from http.server import SimpleHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -18,52 +20,85 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent
 WEB_ROOT = ROOT / "web"
-Z_COUNT, C_COUNT, Y_COUNT, X_COUNT = 70, 2, 1024, 1024
-X_UM, Y_UM, Z_UM = 0.25, 0.25, 1.0
+@dataclass(frozen=True)
+class DatasetSpec:
+    key: str
+    label: str
+    shape_zcyx: tuple[int, int, int, int]
+    scales_um: tuple[float, float, float]
+    colors: tuple[str, ...]
+    patterns: tuple[str, ...]
 
 
-def make_data() -> np.ndarray:
-    """Return synthetic uint16 data in natural Z,C,Y,X order."""
-    yy, xx = np.ogrid[:Y_COUNT, :X_COUNT]
-    data = np.empty((Z_COUNT, C_COUNT, Y_COUNT, X_COUNT), dtype=np.uint16)
-    for z in range(Z_COUNT):
-        cx = 260 + z * 7
-        cy = 390 + int(90 * np.sin(z / 8))
-        circle = np.maximum(0, 1 - np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) / 180)
-        ramp = (xx / (X_COUNT - 1)) * 0.25
-        data[z, 0] = np.clip((circle + ramp) * 52000, 0, 65535).astype(np.uint16)
+DATASETS = {
+    "a": DatasetSpec(
+        "a", "Dataset A · 70Z × 2C × 1024²", (70, 2, 1024, 1024),
+        (0.25, 0.25, 1.0), ("#00ff00", "#ff00ff"),
+        ("moving filled circle plus horizontal ramp", "moving square ring plus diagonal stripes"),
+    ),
+    "b": DatasetSpec(
+        "b", "Dataset B · 31Z × 1C × 512×768", (31, 1, 512, 768),
+        (0.65, 0.40, 2.5), ("#00bfff",),
+        ("moving cyan diamond plus vertical bars",),
+    ),
+    "c": DatasetSpec(
+        "c", "Dataset C · 18Z × 3C × 640×384", (18, 3, 640, 384),
+        (0.18, 0.55, 0.8), ("#ff3b30", "#34c759", "#0a84ff"),
+        ("moving red disk", "moving green rectangle", "blue horizontal bands"),
+    ),
+}
 
-        sx = 690 - z * 5
-        sy = 610 + int(70 * np.cos(z / 7))
-        outer = (np.abs(xx - sx) < 150) & (np.abs(yy - sy) < 150)
-        inner = (np.abs(xx - sx) < 95) & (np.abs(yy - sy) < 95)
-        ring = outer & ~inner
-        diagonal = ((xx + yy + z * 11) % 190) < 24
-        data[z, 1] = np.where(ring, 54000, np.where(diagonal, 15000, 500)).astype(
-            np.uint16
-        )
-    return data
+
+def make_dataset(spec: DatasetSpec) -> np.ndarray:
+    """Create visibly distinct synthetic uint16 data in natural Z,C,Y,X order."""
+    z_count, c_count, y_count, x_count = spec.shape_zcyx
+    yy, xx = np.ogrid[:y_count, :x_count]
+    data = np.empty(spec.shape_zcyx, dtype=np.uint16)
+    for z in range(z_count):
+        if spec.key == "a":
+            cx, cy = 260 + z * 7, 390 + int(90 * np.sin(z / 8))
+            circle = np.maximum(0, 1 - np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) / 180)
+            data[z, 0] = np.clip((circle + xx / (x_count - 1) * 0.25) * 52000, 0, 65535)
+            sx, sy = 690 - z * 5, 610 + int(70 * np.cos(z / 7))
+            outer = (np.abs(xx - sx) < 150) & (np.abs(yy - sy) < 150)
+            inner = (np.abs(xx - sx) < 95) & (np.abs(yy - sy) < 95)
+            data[z, 1] = np.where(outer & ~inner, 54000, np.where(((xx + yy + z * 11) % 190) < 24, 15000, 500))
+        elif spec.key == "b":
+            cx, cy = 100 + z * 17, y_count // 2 + int(90 * np.sin(z / 4))
+            diamond = np.maximum(0, 1 - (np.abs(xx - cx) + np.abs(yy - cy)) / 150)
+            bars = ((xx + z * 9) % 120) < 18
+            data[z, 0] = np.where(bars, 12000, 400) + (diamond * 50000).astype(np.uint16)
+        else:
+            cx, cy = 70 + z * 14, 130 + z * 15
+            data[z, 0] = np.where((xx - cx) ** 2 + (yy - cy) ** 2 < 70**2, 52000, 300)
+            rx, ry = x_count - 80 - z * 9, y_count // 2 + int(120 * np.sin(z / 3))
+            data[z, 1] = np.where((np.abs(xx - rx) < 55) & (np.abs(yy - ry) < 100), 47000, 500)
+            data[z, 2] = np.where(((yy + z * 13) % 105) < 22, 38000, 250)
+    return data.astype(np.uint16, copy=False)
 
 
 @dataclass
 class RequestedState:
-    z: int = Z_COUNT // 2
+    dataset: str = "a"
+    z: int = 35
     mode: str = "composite"
-    c0_min: int = 0
-    c0_max: int = 55000
-    c1_min: int = 0
-    c1_max: int = 55000
+    channel_mins: list[int] = field(default_factory=lambda: [0, 0])
+    channel_maxs: list[int] = field(default_factory=lambda: [55000, 55000])
+    channel_colors: list[str] = field(default_factory=lambda: ["#00ff00", "#ff00ff"])
     scale_bar: bool = True
     axis_lines: bool = False
 
 
 class Demo:
     def __init__(self) -> None:
-        self.data_zcyx = make_data()
-        # LocalVolume follows the dimension sequence. This transpose is a view, not a copy.
-        self.data_cxyz = self.data_zcyx.transpose(1, 3, 2, 0)
         self.viewer = neuroglancer.Viewer()
         self.requested = RequestedState()
+        self.spec = DATASETS[self.requested.dataset]
+        self.data_zcyx = make_dataset(self.spec)
+        self.data_cxyz = self.data_zcyx.transpose(1, 3, 2, 0)
+        self.volume: Any = None
+        self.dataset_revision = 1
+        self.switch_count = 0
         self.requested_lock = threading.Lock()
         self.update_lock = threading.Lock()
         self.last_viewer_change = time.time()
@@ -88,41 +123,47 @@ class Demo:
             ) from exc
 
     @staticmethod
-    def _shader(r: RequestedState) -> str:
-        c0 = f"clamp((float(getDataValue(0)) - {r.c0_min}.0) / {max(1, r.c0_max-r.c0_min)}.0, 0.0, 1.0)"
-        c1 = f"clamp((float(getDataValue(1)) - {r.c1_min}.0) / {max(1, r.c1_max-r.c1_min)}.0, 0.0, 1.0)"
-        if r.mode == "c0":
-            rgb = f"vec3(0.0, {c0}, 0.0)"
-        elif r.mode == "c1":
-            rgb = f"vec3({c1}, 0.0, {c1})"
+    def _color_vector(value: str) -> str:
+        if not re.fullmatch(r"#[0-9a-fA-F]{6}", value):
+            raise ValueError(f"Invalid RGB color: {value!r}")
+        rgb = [int(value[i : i + 2], 16) / 255 for i in (1, 3, 5)]
+        return f"vec3({rgb[0]:.8f}, {rgb[1]:.8f}, {rgb[2]:.8f})"
+
+    @classmethod
+    def _shader(cls, r: RequestedState) -> str:
+        # Current upstream represents uint16 samples as its own uint16_t GLSL struct.
+        # toNormalized is the supported conversion and maps uint16 to [0, 1].
+        def channel(name: str, index: int, low: int, high: int) -> str:
+            low_n = low / 65535
+            width_n = max(1, high - low) / 65535
+            return (
+                f"float {name} = clamp((toNormalized(getDataValue({index})) - "
+                f"{low_n:.10f}) / {width_n:.10f}, 0.0, 1.0);"
+            )
+
+        channel_lines = [
+            channel(f"c{i}", i, r.channel_mins[i], r.channel_maxs[i])
+            for i in range(len(r.channel_colors))
+        ]
+        color_vectors = [cls._color_vector(color) for color in r.channel_colors]
+        if re.fullmatch(r"c\d+", r.mode):
+            index = int(r.mode[1:])
+            rgb = f"c{index} * {color_vectors[index]}"
         else:
-            rgb = f"vec3({c1}, {c0}, {c1})"
-        return f"void main() {{ emitRGB({rgb}); }}"
+            terms = [f"c{i} * {color}" for i, color in enumerate(color_vectors)]
+            rgb = f"clamp({' + '.join(terms)}, 0.0, 1.0)"
+        return "\n".join(
+            [
+                "void main() {",
+                *[f"  {line}" for line in channel_lines],
+                f"  emitRGB({rgb});",
+                "}",
+            ]
+        )
 
     def _configure_once(self) -> None:
-        volume_dimensions = neuroglancer.CoordinateSpace(
-            names=["c^", "x", "y", "z"],
-            units=["", "um", "um", "um"],
-            scales=[1, X_UM, Y_UM, Z_UM],
-        )
-        navigation_dimensions = neuroglancer.CoordinateSpace(
-            names=["x", "y", "z"],
-            units=["um", "um", "um"],
-            scales=[X_UM, Y_UM, Z_UM],
-        )
         with self.viewer.txn() as state:
-            state.dimensions = navigation_dimensions
-            state.layers["synthetic ZCYX"] = neuroglancer.ImageLayer(
-                source=neuroglancer.LocalVolume(
-                    data=self.data_cxyz,
-                    dimensions=volume_dimensions,
-                    volume_type="image",
-                ),
-                shader=self._shader(self.requested),
-            )
-            state.layout = "xy"
-            # c^ is a local image-channel dimension, not a global navigation dimension.
-            state.position = [X_COUNT / 2, Y_COUNT / 2, self.requested.z]
+            self._replace_dataset_state(state, self.spec, self.requested)
             state.show_scale_bar = self.requested.scale_bar
             state.show_axis_lines = self.requested.axis_lines
             state.show_default_annotations = False
@@ -134,6 +175,48 @@ class Demo:
             config.show_help_button = False
             config.show_settings_button = False
             config.show_panel_borders = False
+
+    def _replace_dataset_state(
+        self, state: Any, spec: DatasetSpec, requested: RequestedState
+    ) -> None:
+        z_count, _, y_count, x_count = spec.shape_zcyx
+        x_um, y_um, z_um = spec.scales_um
+        volume_dimensions = neuroglancer.CoordinateSpace(
+            names=["c^", "x", "y", "z"],
+            units=["", "um", "um", "um"],
+            scales=[1, x_um, y_um, z_um],
+        )
+        navigation_dimensions = neuroglancer.CoordinateSpace(
+            names=["x", "y", "z"],
+            units=["um", "um", "um"],
+            scales=[x_um, y_um, z_um],
+        )
+        self.volume = neuroglancer.LocalVolume(
+            data=self.data_cxyz,
+            dimensions=volume_dimensions,
+            volume_type="image",
+        )
+        state.dimensions = navigation_dimensions
+        state.layers["dataset"] = neuroglancer.ImageLayer(
+            source=self.volume,
+            shader=self._shader(requested),
+        )
+        state.layout = "xy"
+        state.position = [x_count / 2, y_count / 2, min(requested.z, z_count - 1)]
+
+    @staticmethod
+    def _default_requested(spec: DatasetSpec, presentation: RequestedState) -> RequestedState:
+        z_count, c_count, _, _ = spec.shape_zcyx
+        return RequestedState(
+            dataset=spec.key,
+            z=z_count // 2,
+            mode="composite",
+            channel_mins=[0] * c_count,
+            channel_maxs=[55000] * c_count,
+            channel_colors=list(spec.colors),
+            scale_bar=presentation.scale_bar,
+            axis_lines=presentation.axis_lines,
+        )
 
     def update(self, payload: dict[str, Any]) -> dict[str, Any]:
         """Snapshot requested state, then perform exactly one viewer transaction.
@@ -148,43 +231,84 @@ class Demo:
         # reported requested state; publish it only after the NG transaction succeeds.
         with self.update_lock:
             with self.requested_lock:
-                snapshot = RequestedState(**vars(self.requested))
+                snapshot = copy.deepcopy(self.requested)
+            switching = "dataset" in payload
+            old_dataset = (self.spec, self.data_zcyx, self.data_cxyz, self.volume)
+            if switching:
+                key = str(payload["dataset"])
+                if key not in DATASETS:
+                    raise ValueError(f"Unknown dataset: {key!r}")
+                new_spec = DATASETS[key]
+                snapshot = self._default_requested(new_spec, snapshot)
+                self.spec = new_spec
+                self.data_zcyx = make_dataset(new_spec)
+                self.data_cxyz = self.data_zcyx.transpose(1, 3, 2, 0)
             if "z" in payload:
-                snapshot.z = max(0, min(Z_COUNT - 1, int(payload["z"])))
+                snapshot.z = max(
+                    0, min(self.spec.shape_zcyx[0] - 1, int(payload["z"]))
+                )
             if "mode" in payload:
-                if payload["mode"] not in {"c0", "c1", "composite"}:
+                valid_modes = {"composite"} | {
+                    f"c{i}" for i in range(self.spec.shape_zcyx[1])
+                }
+                if payload["mode"] not in valid_modes:
                     raise ValueError(f"Invalid display mode: {payload['mode']!r}")
                 snapshot.mode = payload["mode"]
-            for key in ("c0_min", "c0_max", "c1_min", "c1_max"):
-                if key in payload:
-                    setattr(snapshot, key, max(0, min(65535, int(payload[key]))))
+            if "channel" in payload:
+                channel_index = int(payload["channel"])
+                if not 0 <= channel_index < self.spec.shape_zcyx[1]:
+                    raise ValueError(f"Invalid channel index: {channel_index}")
+                if "min" in payload:
+                    snapshot.channel_mins[channel_index] = max(
+                        0, min(65535, int(payload["min"]))
+                    )
+                if "max" in payload:
+                    snapshot.channel_maxs[channel_index] = max(
+                        0, min(65535, int(payload["max"]))
+                    )
+                if "color" in payload:
+                    value = str(payload["color"]).lower()
+                    self._color_vector(value)
+                    snapshot.channel_colors[channel_index] = value
             if "scale_bar" in payload:
                 snapshot.scale_bar = bool(payload["scale_bar"])
             if "axis_lines" in payload:
                 snapshot.axis_lines = bool(payload["axis_lines"])
 
-            with self.viewer.txn() as state:
-                if "z" in payload:
-                    position = list(state.position)
-                    position[self._spatial_axis_index(state, "z")] = snapshot.z
-                    state.position = position
-                if any(
-                    key in payload
-                    for key in ("mode", "c0_min", "c0_max", "c1_min", "c1_max")
-                ):
-                    state.layers["synthetic ZCYX"].shader = self._shader(snapshot)
-                if "scale_bar" in payload:
-                    state.show_scale_bar = snapshot.scale_bar
-                if "axis_lines" in payload:
-                    state.show_axis_lines = snapshot.axis_lines
+            try:
+                with self.viewer.txn() as state:
+                    if switching:
+                        self._replace_dataset_state(state, self.spec, snapshot)
+                        state.show_scale_bar = snapshot.scale_bar
+                        state.show_axis_lines = snapshot.axis_lines
+                        state.show_default_annotations = False
+                    elif "z" in payload:
+                        position = list(state.position)
+                        position[self._spatial_axis_index(state, "z")] = snapshot.z
+                        state.position = position
+                    if not switching and any(
+                        key in payload for key in ("mode", "channel")
+                    ):
+                        state.layers["dataset"].shader = self._shader(snapshot)
+                    if "scale_bar" in payload:
+                        state.show_scale_bar = snapshot.scale_bar
+                    if "axis_lines" in payload:
+                        state.show_axis_lines = snapshot.axis_lines
+            except Exception:
+                if switching:
+                    self.spec, self.data_zcyx, self.data_cxyz, self.volume = old_dataset
+                raise
 
             with self.requested_lock:
                 self.requested = snapshot
+            if switching:
+                self.dataset_revision += 1
+                self.switch_count += 1
         return self.diagnostics()
 
     def diagnostics(self) -> dict[str, Any]:
         with self.requested_lock:
-            requested = vars(RequestedState(**vars(self.requested)))
+            requested = vars(copy.deepcopy(self.requested))
         state = self.viewer.state
         position = [float(x) for x in state.position]
         dimension_names = self._dimension_names(state)
@@ -198,19 +322,41 @@ class Demo:
                 "layout": state.layout.to_json(),
                 "showScaleBar": state.show_scale_bar,
                 "showAxisLines": state.show_axis_lines,
+                "shader": state.layers["dataset"].shader,
                 "viewerChangedAt": self.last_viewer_change,
             },
             "data": {
+                "dataset": self.spec.key,
+                "label": self.spec.label,
+                "datasetRevision": self.dataset_revision,
+                "switchCount": self.switch_count,
                 "naturalShapeZCYX": list(self.data_zcyx.shape),
                 "dtype": str(self.data_zcyx.dtype),
+                "arrayBytes": int(self.data_zcyx.nbytes),
                 "coordinateNames": ["c^", "x", "y", "z"],
                 "units": ["", "um", "um", "um"],
-                "scales": [1, X_UM, Y_UM, Z_UM],
+                "scales": [1, *self.spec.scales_um],
                 "transposeSharesMemory": bool(
                     np.shares_memory(self.data_zcyx, self.data_cxyz)
                 ),
+                "expectedPatterns": {
+                    f"C{i}": pattern for i, pattern in enumerate(self.spec.patterns)
+                },
             },
         }
+
+    @staticmethod
+    def dataset_catalog() -> list[dict[str, Any]]:
+        return [
+            {
+                "key": spec.key,
+                "label": spec.label,
+                "shapeZCYX": list(spec.shape_zcyx),
+                "scalesUm": list(spec.scales_um),
+                "channelCount": spec.shape_zcyx[1],
+            }
+            for spec in DATASETS.values()
+        ]
 
 
 def make_handler(demo: Demo):
@@ -229,7 +375,13 @@ def make_handler(demo: Demo):
         def do_GET(self) -> None:
             path = urlparse(self.path).path
             if path == "/api/bootstrap":
-                self._json({"viewerUrl": demo.viewer.get_viewer_url(), **demo.diagnostics()})
+                self._json(
+                    {
+                        "viewerUrl": demo.viewer.get_viewer_url(),
+                        "datasets": demo.dataset_catalog(),
+                        **demo.diagnostics(),
+                    }
+                )
                 return
             if path == "/api/state":
                 self._json(demo.diagnostics())

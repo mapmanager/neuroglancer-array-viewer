@@ -13,10 +13,11 @@
         <span id="status" class="status">Starting…</span>
       </header>
       <section class="controls" aria-label="Viewer controls">
+        <fieldset><legend>Dataset</legend>
+          <select id="dataset" aria-label="Dataset"></select>
+        </fieldset>
         <fieldset><legend>Display</legend>
-          <label><input type="radio" name="mode" value="c0" /> C0 green</label>
-          <label><input type="radio" name="mode" value="c1" /> C1 magenta</label>
-          <label><input type="radio" name="mode" value="composite" checked /> Composite</label>
+          <div id="display-modes"></div>
         </fieldset>
         <fieldset class="z-control"><legend>Z slice</legend>
           <input id="z" type="range" min="0" max="69" value="35" /><output id="z-value">35</output>
@@ -25,11 +26,8 @@
           <label><input id="scale-bar" type="checkbox" checked /> Scale bar</label>
           <label><input id="axis-lines" type="checkbox" /> Axis lines</label>
         </fieldset>
-        <fieldset class="contrast"><legend>Contrast (uint16)</legend>
-          <label>C0 min <input id="c0-min" type="number" min="0" max="65535" value="0" /></label>
-          <label>C0 max <input id="c0-max" type="number" min="0" max="65535" value="55000" /></label>
-          <label>C1 min <input id="c1-min" type="number" min="0" max="65535" value="0" /></label>
-          <label>C1 max <input id="c1-max" type="number" min="0" max="65535" value="55000" /></label>
+        <fieldset class="contrast"><legend>Contrast and color (uint16)</legend>
+          <div id="channel-controls"></div>
         </fieldset>
       </section>
       <div class="viewer-shell"><iframe id="viewer" title="Neuroglancer image viewer"></iframe></div>
