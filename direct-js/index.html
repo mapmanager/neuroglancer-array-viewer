@@ -5,17 +5,39 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Neuroglancer direct-JS Phase A</title>
   </head>
-  <body>
+  <body class="ng-array-demo-page">
     <main>
-      <header><div><span>V2 · DIRECT-JS PHASE A</span><h1>Neuroglancer mounted in our div</h1></div><strong id="status">Starting…</strong></header>
-      <section class="controls">
-        <label>Layout <select id="layout"><option>xy</option><option>xy-3d</option><option>4panel</option><option>3d</option></select></label>
+      <header>
+        <div><span>V2 · DIRECT-JS PHASE A</span><h1>Neuroglancer mounted in our div</h1></div>
+        <strong id="status">Starting…</strong>
+      </header>
+      <section class="controls" aria-label="Direct viewer controls">
+        <label>Chrome placement
+          <select id="placement">
+            <option value="top">Overlay top</option>
+            <option value="left">Overlay left</option>
+            <option value="bottom">Overlay bottom</option>
+            <option value="external">Outside viewer</option>
+          </select>
+        </label>
+        <label>Z coordinate <input id="z" type="number" step="1" value="4045" /></label>
         <label><input id="scale-bar" type="checkbox" checked /> Scale bar</label>
         <label><input id="axis-lines" type="checkbox" /> Axis lines</label>
-        <button id="reset">Reload public source</button>
+        <button id="reset" type="button">Reset source</button>
       </section>
-      <div id="ng-viewer" aria-label="Directly embedded Neuroglancer viewer"></div>
-      <p>Known-supported HTTP source: Neuroglancer public FlyEM FIB-25 precomputed image. No iframe and no custom NumPy datasource.</p>
+
+      <section id="viewer-stage" class="viewer-stage placement-top">
+        <nav id="layout-chrome" class="layout-chrome" aria-label="Viewer layout">
+          <span class="chrome-title">Layout</span>
+          <button type="button" data-layout="xy">XY</button>
+          <button type="button" data-layout="xy-3d">XY + 3D</button>
+          <button type="button" data-layout="4panel-alt">4 panel</button>
+          <button type="button" data-layout="3d">3D</button>
+        </nav>
+        <div id="ng-viewer" aria-label="Directly embedded Neuroglancer viewer"></div>
+      </section>
+
+      <p>Public FIB-25 precomputed datasource in Google Cloud Storage. Direct mount: no iframe. The custom floating toolbar is our DOM, not Neuroglancer chrome.</p>
       <details open><summary>Adapter diagnostics</summary><pre id="diagnostics"></pre></details>
     </main>
     <script type="module" src="/src/main.js"></script>
