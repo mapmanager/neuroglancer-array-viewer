@@ -14,7 +14,7 @@ resolution-markers = [
 [[package]]
 name = "acqstore"
 version = "0.2.0"
-source = { editable = "../acqstore" }
+source = { git = "https://github.com/mapmanager/acqstore?branch=main#37cc3e78dccec8e686adc9fb0424e90534280138" }
 dependencies = [
     { name = "bioio-ome-zarr", marker = "python_full_version >= '3.12'" },
     { name = "czifile", marker = "python_full_version >= '3.12'" },
@@ -32,42 +32,6 @@ dependencies = [
     { name = "tabulate", marker = "python_full_version >= '3.12'" },
     { name = "tifffile", marker = "python_full_version >= '3.12'" },
     { name = "zarr", marker = "python_full_version >= '3.12'" },
-]
-
-[package.metadata]
-requires-dist = [
-    { name = "bioio-ome-zarr", specifier = ">=3.5.1" },
-    { name = "czifile", specifier = ">=2026.4.11" },
-    { name = "nd2", specifier = ">=0.11.3" },
-    { name = "numpy", specifier = ">=2.4.4" },
-    { name = "oirfile", specifier = ">=2026.7.10,<2026.8" },
-    { name = "pandas", specifier = ">=3.0.2" },
-    { name = "platformdirs", specifier = ">=4.9.6" },
-    { name = "plotly", specifier = ">=6.7.0" },
-    { name = "pooch", specifier = ">=1.9.0" },
-    { name = "pyabf", specifier = ">=2.3.8" },
-    { name = "s3fs", specifier = ">=2026.6.0" },
-    { name = "scikit-image", specifier = ">=0.24.0" },
-    { name = "scipy", specifier = ">=1.17.1" },
-    { name = "tabulate", specifier = ">=0.10.0" },
-    { name = "tifffile", specifier = ">=2026.4.11" },
-    { name = "zarr", specifier = ">=3.2.1" },
-]
-
-[package.metadata.requires-dev]
-dev = [
-    { name = "pytest", specifier = ">=8.4.2" },
-    { name = "pytest-cov", specifier = ">=7.0.0" },
-    { name = "ruff", specifier = ">=0.15.11" },
-]
-docs = [
-    { name = "matplotlib" },
-    { name = "mkdocs", specifier = ">=1.6.1" },
-    { name = "mkdocs-jupyter" },
-    { name = "mkdocs-material" },
-    { name = "mkdocs-section-index" },
-    { name = "mkdocstrings", extras = ["python"] },
-    { name = "pymdown-extensions" },
 ]
 
 [[package]]
@@ -1277,7 +1241,7 @@ requires-dist = [
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "acqstore", marker = "python_full_version >= '3.12'", editable = "../acqstore" },
+    { name = "acqstore", marker = "python_full_version >= '3.12'", git = "https://github.com/mapmanager/acqstore?branch=main" },
     { name = "pytest", specifier = ">=9,<10" },
 ]
 
