@@ -25,7 +25,7 @@ void main() {
 
 const DEFAULT_CHANNEL_COLORS = ["#00ff00", "#ff00ff", "#00aaff", "#ff7a00"];
 
-function channels(count, windows, colors = DEFAULT_CHANNEL_COLORS) {
+function channelDefinitions(count, windows, colors = DEFAULT_CHANNEL_COLORS) {
   return Array.from({length: count}, (_, index) => ({
     index,
     name: `C${index}`,
@@ -53,7 +53,7 @@ const SOURCE_PRESETS = {
     dimensions: {x:[0.25,"um"], y:[0.25,"um"], z:[1,"um"]},
     position: [512, 512, 35],
     crossSectionScale: 1,
-    channels: channels(2, [[100,55000], [0,55000]]),
+    channels: channelDefinitions(2, [[100,55000], [0,55000]]),
   },
   "numpy-b": {
     source: `${NUMPY_SOURCE_PREFIX}b`,
@@ -62,7 +62,7 @@ const SOURCE_PRESETS = {
     dimensions: {x:[0.40,"um"], y:[0.65,"um"], z:[2.5,"um"]},
     position: [256, 384, 15],
     crossSectionScale: 1,
-    channels: channels(1, [[0,55000]], ["#00bfff"]),
+    channels: channelDefinitions(1, [[0,55000]], ["#00bfff"]),
   },
   "numpy-c": {
     source: `${NUMPY_SOURCE_PREFIX}c`,
@@ -71,7 +71,7 @@ const SOURCE_PRESETS = {
     dimensions: {x:[0.55,"um"], y:[0.18,"um"], z:[0.8,"um"]},
     position: [320, 192, 9],
     crossSectionScale: 1,
-    channels: channels(3, [[0,55000], [0,55000], [0,55000]], ["#ff3b30", "#33c759", "#0a84ff"]),
+    channels: channelDefinitions(3, [[0,55000], [0,55000], [0,55000]], ["#ff3b30", "#33c759", "#0a84ff"]),
   },
   "numpy-long-2c": {
     source: `${NUMPY_SOURCE_PREFIX}long-2c`,
@@ -81,7 +81,7 @@ const SOURCE_PRESETS = {
     position: [25000, 512, 0.5],
     crossSectionScale: 60,
     fitToView: true,
-    channels: channels(2, [[700,52700], [700,48700]], ["#ff7a0d", "#00d9ff"]),
+    channels: channelDefinitions(2, [[700,52700], [700,48700]], ["#ff7a0d", "#00d9ff"]),
   },
   "numpy-long-1c": {
     source: `${NUMPY_SOURCE_PREFIX}long-1c`,
@@ -91,7 +91,7 @@ const SOURCE_PRESETS = {
     position: [15000, 50, 0.5],
     crossSectionScale: 38,
     fitToView: true,
-    channels: channels(1, [[700,52700]], ["#ffc728"]),
+    channels: channelDefinitions(1, [[700,52700]], ["#ffc728"]),
   },
   "numpy-rr30a": {
     source: `${NUMPY_SOURCE_PREFIX}rr30a`,
@@ -100,9 +100,28 @@ const SOURCE_PRESETS = {
     dimensions: {x:[1,""], y:[1,""], z:[1,""]},
     position: [512, 512, 35],
     crossSectionScale: 1,
-    channels: channels(2, [[0,384], [0,296]]),
+    channels: channelDefinitions(2, [[0,384], [0,296]]),
   },
 };
+
+/**
+ * Registers or replaces a Python-wrapper datasource preset.
+ *
+ * @param {object} descriptor - Dataset containing `key` and optional `name`.
+ */
+export function registerPythonDataset(descriptor) {
+  const {key, name = key} = descriptor;
+  if (!/^[A-Za-z0-9_-]+$/.test(key)) throw new Error(`Invalid Python dataset key: ${key}`);
+  SOURCE_PRESETS[`python-${key}`] = {
+    source: `python://volume/${key}`,
+    name,
+    dataset: {key},
+    dimensions: {x:[1,""], y:[1,""], z:[1,""]},
+    position: [0.5, 0.5, 0.5],
+    crossSectionScale: 1,
+    channels: [],
+  };
+}
 
 function colorToFloat32(color) {
   const value = color.startsWith("#") ? color.slice(1) : color;
@@ -209,7 +228,11 @@ export class NgImageViewer {
       const response = await fetch(`/api/dataset/${preset.dataset.key}`);
       if (!response.ok) throw new Error(`Dataset metadata failed: ${response.status} ${response.statusText}`);
       metadata = await response.json();
-      channels = preset.channels.map((channel, index) => {
+      const channelCount = metadata.shapeCXYZ?.[0] ?? preset.channels.length;
+      const sourceChannels = preset.channels.length
+        ? preset.channels
+        : channelDefinitions(channelCount, metadata.channelAutoRanges ?? [[0, 65535]]);
+      channels = sourceChannels.map((channel, index) => {
         const domain = metadata.channelRanges?.[index];
         const autoContrast = metadata.channelAutoRanges?.[index];
         if (!domain || domain.length !== 2 || domain[0] >= domain[1]) return channel;
@@ -228,6 +251,15 @@ export class NgImageViewer {
       ?? preset.dataset?.displayShapeXYZ
       ?? preset.displayShapeXYZ;
     this.currentLayout = "xy";
+    if (metadata?.shapeCXYZ) {
+      preset.dataset.displayShapeXYZ = metadata.shapeCXYZ.slice(1);
+      preset.position = metadata.shapeCXYZ.slice(1).map((size) => size / 2);
+      preset.dimensions = {
+        x: [metadata.scales[1], metadata.units[1]],
+        y: [metadata.scales[2], metadata.units[2]],
+        z: [metadata.scales[3], metadata.units[3]],
+      };
+    }
     this.channels = channels.map((channel) => ({
       ...channel,
       domain: [...channel.domain],
@@ -330,7 +362,7 @@ export class NgImageViewer {
       "ng-array-demo-hide-display-dimensions",
       !this.showDisplayDimensions,
     );
-    this.emitDiagnostics();
+    this.emitChange();
   }
 
   /**
@@ -348,7 +380,7 @@ export class NgImageViewer {
       "ng-array-demo-hide-native-layout-buttons",
       !this.showNativeLayoutButtons,
     );
-    this.emitDiagnostics();
+    this.emitChange();
   }
 
   /**

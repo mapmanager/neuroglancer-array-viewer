@@ -1,7 +1,7 @@
 /** @file Demo-page composition around the public NgImageViewer adapter. */
 
 import "./style.css";
-import { NgImageViewer } from "./NgImageViewer.js";
+import { NgImageViewer, registerPythonDataset } from "./NgImageViewer.js";
 
 const $ = (selector) => document.querySelector(selector);
 const diagnostics = $("#diagnostics");
@@ -10,6 +10,32 @@ let lastDiagnostics = "";
 let channelSignature = "";
 const Z_RAIL_LAYOUTS = new Set(["xy", "channels-row", "channels-column"]);
 const chromeVisibility = {channels: true, layout: true};
+let applicationRevision = -1;
+
+function placementClass(value) {
+  return {overlay_top:"top", overlay_left:"left", overlay_bottom:"bottom", outside:"external"}[value] ?? "top";
+}
+
+async function loadApplicationState() {
+  try {
+    const response = await fetch("/api/app-state");
+    if (!response.ok) return null;
+    return await response.json();
+  } catch {
+    return null;
+  }
+}
+
+function applyConfig(config = {}) {
+  chromeVisibility.channels = config.showChannelsControl ?? true;
+  chromeVisibility.layout = config.showLayoutControl ?? true;
+  $("#channel-chrome").hidden = !chromeVisibility.channels;
+  $("#layout-chrome").hidden = !chromeVisibility.layout;
+  $("#options-chrome").hidden = !(config.showOptionsControl ?? true);
+  $("#viewer-stage").dataset.showZControl = String(config.showZControl ?? true);
+  const placement = placementClass(config.chromePlacement);
+  $("#viewer-stage").className = `viewer-stage placement-${placement}`;
+}
 
 function renderChannelControls(channels) {
   const signature = JSON.stringify(
@@ -64,7 +90,8 @@ function render(value) {
   $("#option-channel-controls").checked = chromeVisibility.channels;
   $("#option-layout-controls").checked = chromeVisibility.layout;
   const zBounds = value.zBounds;
-  const showZ = zBounds?.count > 1 && Z_RAIL_LAYOUTS.has(value.layout);
+  const showZ = $("#viewer-stage").dataset.showZControl !== "false"
+    && zBounds?.count > 1 && Z_RAIL_LAYOUTS.has(value.layout);
   $("#z-chrome").hidden = !showZ;
   $("#viewer-stage").classList.toggle("has-z", showZ);
   if (showZ) {
@@ -101,15 +128,39 @@ const unsubscribeBridge = adapter.subscribeViewState((viewState) => {
     }
   }, 100);
 });
-await adapter.setSource("public");
+const initialApplication = await loadApplicationState();
+if (initialApplication) {
+  for (const dataset of initialApplication.datasets) registerPythonDataset(dataset);
+  $("#datasource").replaceChildren(...initialApplication.datasets.map((dataset) => {
+    const option = document.createElement("option");
+    option.value = `python-${dataset.key}`;
+    option.textContent = dataset.name;
+    return option;
+  }));
+  applicationRevision = initialApplication.revision;
+  await adapter.setSource(`python-${initialApplication.selectedDataset}`);
+  applyConfig(initialApplication.config);
+  adapter.setScaleBar(initialApplication.config.showScaleBar);
+  adapter.setAxisLines(initialApplication.config.showAxisLines);
+  adapter.setDisplayDimensions(initialApplication.config.showDisplayDimensions);
+  adapter.setNativeLayoutButtons(initialApplication.config.showNativeLayoutButtons);
+} else {
+  await adapter.setSource("public");
+}
 render(adapter.getDiagnostics());
+
+const applicationPoll = window.setInterval(async () => {
+  const state = await loadApplicationState();
+  if (!state || state.revision === applicationRevision) return;
+  applicationRevision = state.revision;
+  const preset = `python-${state.selectedDataset}`;
+  $("#datasource").value = preset;
+  await adapter.setSource(preset);
+}, 250);
 
 $("#layout-chrome").addEventListener("click", (event) => {
   const layout = event.target.dataset.layout;
   if (layout) adapter.setLayout(layout);
-});
-$("#placement").addEventListener("change", (event) => {
-  $("#viewer-stage").className = `viewer-stage placement-${event.target.value}`;
 });
 $("#datasource").addEventListener("change", async (event) => {
   status.textContent = "Loading dataset…";
@@ -189,5 +240,6 @@ $("#channel-controls").addEventListener("click", (event) => {
 window.addEventListener("beforeunload", () => {
   unsubscribeBridge();
   if (bridgeTimer !== undefined) clearTimeout(bridgeTimer);
+  clearInterval(applicationPoll);
   adapter.dispose();
 });

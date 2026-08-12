@@ -2,6 +2,8 @@
 
 This experiment imports the exact same pinned Neuroglancer GitHub commit as the Python project and mounts it into our `#ng-viewer` div through an `NgImageViewer` adapter. It uses no iframe.
 
+When served with `NgArrayViewer`, the client reads `/api/app-state` for registered datasets and `NgConfig` defaults. It watches the revisioned selected dataset so Python `select_dataset()` calls replace the source in an already-open viewer. The wrapper remains web-framework-neutral; NiceGUI or another host embeds the frontend URL rather than interpreting diagnostic JSON.
+
 It retains the official public FIB-25 precomputed datasource as a direct-embedding reference and also exposes AcqImage-backed NumPy datasets through Neuroglancer's upstream Python datasource protocol.
 
 ```bash

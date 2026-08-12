@@ -6,6 +6,7 @@ const numpyProxy = {
   "/api/health": numpyServer,
   "/api/view-state": numpyServer,
   "/api/dataset": numpyServer,
+  "/api/app-state": numpyServer,
 };
 
 export default defineConfig({

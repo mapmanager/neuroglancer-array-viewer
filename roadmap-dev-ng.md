@@ -204,6 +204,8 @@ The Options menu also independently toggles the project-owned Channels and Layou
 
 Before adding ROI CRUD chrome, perform a bounded architecture review around four contracts: dataset registration/metadata, channel display state, viewer-state callbacks, and resource lifecycle. Extract a small public Python server/application wrapper so external callers can register an AcqImage or NumPy dataset, subscribe to state, start/stop transport, and replace datasets without manipulating HTTP handler globals. Keep toolbar composition separate from adapter state, and keep all pinned unstable Neuroglancer access inside `NgImageViewer`. ROI model/store, adapter API, annotation rendering, and toolbar DOM should then be separate layers over one public contract.
 
+The first wrapper milestone implements `NgArrayViewer`, frozen `NgConfig`, `ChromePlacement`, typed `ViewerLayout`/`ViewState`, AcqImage and NumPy registration, instance-owned HTTP state, context-manager lifecycle, and non-blocking callbacks. Optional presentation chrome defaults hidden; Options and multi-plane Z navigation default available. `/api/app-state` publishes configuration, registered datasets, and a monotonically increasing selection revision, allowing Python `select_dataset()` to replace the source in a running browser. The frontend remains separately served by Vite in this development version; a future packaging pass should make the wrapper own or locate production frontend assets before claiming a one-process embeddable component.
+
 ## Clean-room install and run
 
 From a fresh unzip, with Git, `uv`, compiler tools, and a suitable Node available:

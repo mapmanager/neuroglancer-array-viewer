@@ -63,28 +63,36 @@ Before transport, each AcqImage `(Y,X)` plane is transposed and flipped along th
 
 The direct adapter publishes view-state snapshots through `getViewState()` and `subscribeViewState()`, including named index position, calibrated physical position, and both index and physical XY ranges for every slice panel. The optional Python server receives coalesced snapshots at `/api/view-state` and exposes non-blocking callbacks through `ViewStateDispatcher.subscribe()`. Its example `log_view_state()` subscriber logs dataset, layout, calibrated Z, and calibrated XY bounds with source file, function, and line context.
 
-### Python integration boundary
+### Public Python wrapper
 
-The current Python boundary is deliberately small. `acquisition_to_ng(acquisition)` converts a complete AcqImage to display-oriented C,X,Y,Z data. `ViewStateDispatcher.subscribe(callback)` registers a non-blocking callback for browser state:
+`NgArrayViewer` owns registered datasets, transport lifecycle, browser configuration, live dataset selection, and non-blocking typed callbacks. It is independent of NiceGUI: any Python web host can embed `viewer.viewer_url`, while the same wrapper supplies pixels and receives state. The direct-JS development server remains a separate frontend process in this development version.
 
 ```python
-from direct_numpy_server import ViewStateDispatcher
+from acqstore.acq_image import AcqImage
+from acqstore.sample_data import ensure_sample_file
+
+from ng_array_viewer import NgArrayViewer, NgConfig, ViewState
 
 
-def on_view_state(state: dict[str, object]) -> None:
+acq = AcqImage(str(ensure_sample_file("rr30a-two-channel")))
+viewer = NgArrayViewer(config=NgConfig())
+viewer.register_acqimage("rr30a", acq, name="RR30a two-channel")
+
+
+def on_view_state(state: ViewState) -> None:
     """Receive calibrated viewer state on the dispatcher thread."""
-    print(state["physicalPosition"])
-    print(state["xyPhysicalBounds"])
+    print(state.layout, state.x, state.y, state.z, state.z_unit)
 
 
-dispatcher = ViewStateDispatcher()
-unsubscribe = dispatcher.subscribe(on_view_state)
+unsubscribe = viewer.subscribe_view_state(on_view_state)
+viewer.start()
+print(viewer.transport_url, viewer.viewer_url)
 
 # During shutdown:
 unsubscribe()
-dispatcher.close()
+viewer.stop()
 ```
 
-The standalone server wires browser POSTs into that dispatcher. This is a verified demo contract, not yet a packaged application API. The next high-priority architecture milestone is a small public server/application wrapper that registers datasets, owns lifecycle, exposes subscriptions, and shuts down cleanly without requiring callers to configure request-handler class attributes.
+`select_dataset(key)` changes the selected dataset at runtime. An already-open direct viewer polls the lightweight application state and performs the same complete source replacement used by the demo. `ViewState.layout` is a `ViewerLayout` enum; calibrated X/Y ranges and Z are typed values, while `ViewState.raw` preserves the complete browser payload for diagnostics and forward-compatible fields. Raw JSON is not the embedding mechanism.
 
 For the full design record and clean-room checklist, read `roadmap-dev-ng.md`.

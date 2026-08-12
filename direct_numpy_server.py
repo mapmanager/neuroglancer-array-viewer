@@ -21,6 +21,7 @@ from acqstore.sample_data import ensure_sample_file
 
 from acqimage_ng import NgVolumeData, acquisition_to_ng
 from contrast import volume_channel_contrast
+from ng_array_viewer import NgArrayViewer, NgConfig, ViewState
 from server import DATASETS, make_dataset
 
 
@@ -395,23 +396,45 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Serve the direct-JS NumPy milestone")
     parser.add_argument("--port", type=int, default=8001)
     args = parser.parse_args()
-    Handler.volumes = {}
-    Handler.volume_metadata = {}
-    Handler.volume_locks = {source_key(key): threading.Lock() for key in DATASET_KEYS}
-    Handler.view_states = ViewStateDispatcher()
-    unsubscribe = Handler.view_states.subscribe(log_view_state)
-    server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
-    LOGGER.info("NumPy datasource: http://127.0.0.1:%d/", args.port)
+    viewer = NgArrayViewer(config=NgConfig(), port=args.port)
     for key in DATASET_KEYS:
-        LOGGER.info("Neuroglancer source: python://volume/%s", source_key(key))
+        viewer.register_volume_data(key, lambda key=key: make_ng_data(key), name=key)
+    unsubscribe = viewer.subscribe_view_state(log_typed_view_state)
+    viewer.start()
+    LOGGER.info("NumPy datasource: %s/", viewer.transport_url)
+    for key in DATASET_KEYS:
+        LOGGER.info("Neuroglancer source: python://volume/%s", key)
     try:
-        server.serve_forever()
+        threading.Event().wait()
     except KeyboardInterrupt:
         pass
     finally:
         unsubscribe()
-        Handler.view_states.close()
-        server.server_close()
+        viewer.stop()
+
+
+def log_typed_view_state(state: ViewState) -> None:
+    """Log one typed public-wrapper state update.
+
+    Args:
+        state: Parsed semantic viewer state.
+    """
+    x = state.x
+    y = state.y
+    summary = "xy bounds unavailable"
+    if x is not None and y is not None:
+        summary = (
+            f"x=[{x.minimum:.3f}, {x.maximum:.3f}] {x.unit or 'index'} "
+            f"y=[{y.minimum:.3f}, {y.maximum:.3f}] {y.unit or 'index'}"
+        )
+    LOGGER.info(
+        "view-state dataset=%s layout=%s z=%.3f %s %s",
+        state.dataset_id,
+        state.layout.value,
+        state.z or 0,
+        state.z_unit or "index",
+        summary,
+    )
 
 
 def log_view_state(state: dict[str, object]) -> None:
