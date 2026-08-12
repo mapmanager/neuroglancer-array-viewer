@@ -10,7 +10,7 @@ from urllib.request import urlopen
 import numpy as np
 from acqstore.acq_image import AcqImage
 
-from ng_array_viewer import (
+from ng_viewer import (
     ChromePlacement,
     NgArrayViewer,
     NgConfig,

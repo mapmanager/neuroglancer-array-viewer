@@ -1,4 +1,4 @@
-"""Deterministic channel-contrast statistics for NumPy image volumes."""
+"""Deterministic uint16 channel-contrast statistics."""
 
 from __future__ import annotations
 

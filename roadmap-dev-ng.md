@@ -204,7 +204,7 @@ The Options menu also independently toggles the project-owned Channels and Layou
 
 Before adding ROI CRUD chrome, perform a bounded architecture review around four contracts: dataset registration/metadata, channel display state, viewer-state callbacks, and resource lifecycle. Extract a small public Python server/application wrapper so external callers can register an AcqImage or NumPy dataset, subscribe to state, start/stop transport, and replace datasets without manipulating HTTP handler globals. Keep toolbar composition separate from adapter state, and keep all pinned unstable Neuroglancer access inside `NgImageViewer`. ROI model/store, adapter API, annotation rendering, and toolbar DOM should then be separate layers over one public contract.
 
-The first wrapper milestone implements `NgArrayViewer`, frozen `NgConfig`, `ChromePlacement`, typed `ViewerLayout`/`ViewState`, AcqImage and NumPy registration, instance-owned HTTP state, context-manager lifecycle, and non-blocking callbacks. Optional presentation chrome defaults hidden; Options and multi-plane Z navigation default available. `/api/app-state` publishes configuration, registered datasets, and a monotonically increasing selection revision, allowing Python `select_dataset()` to replace the source in a running browser. The frontend remains separately served by Vite in this development version; a future packaging pass should make the wrapper own or locate production frontend assets before claiming a one-process embeddable component.
+The first wrapper milestone implements the installable `neuroglancer-array-viewer` distribution and `ng_viewer` import package, frozen `NgConfig`, `ChromePlacement`, typed `ViewerLayout`/`ViewState`, AcqImage and AcqStore-free NumPy registration, instance-owned HTTP state, context-manager lifecycle, blocking `wait()`/`run()`, and non-blocking callbacks. Optional presentation chrome defaults hidden; Options and multi-plane Z navigation default available. `/api/app-state` publishes configuration, registered datasets, and a monotonically increasing selection revision, allowing Python `select_dataset()` to replace the source in a running browser. The verified Vite build is packaged under `ng_viewer/static` and served from the same Python process; Vite remains available only for hot-reload frontend development.
 
 ## Clean-room install and run
 
@@ -229,8 +229,8 @@ npm run dev
 For the NumPy transport preset, also run from the project root:
 
 ```bash
-uv sync --extra acqstore-demo
-uv run --extra acqstore-demo python direct_numpy_server.py
+uv sync
+uv run python direct_numpy_server.py
 ```
 
 Open the printed local URL and confirm diagnostics report `directMount: true`, `iframeCount: 0`, plus loaded channel layers and finite `xyBounds`. Select Dataset A and confirm C0 is the filled object and C1 is the square/diagonal pattern. Change each LUT and contrast range; confirm only its channel changes and diagnostics show the new invlerp `range`. Select rr30a; confirm two visible channels and observed control maxima near 3452 and 4500. Select side-by-side and stacked; confirm one channel appears in each panel and navigation stays linked. Select each long dataset; confirm the image fits the XY panel, its physical aspect is non-square, and scale bars identify seconds and micrometers. Return to composite XY, use wheel and the Z number control in both directions, and confirm the Python terminal reports calibrated X/Y/Z with units. Also toggle scale bar/axis lines and exercise the remaining layouts and chrome placements. Then run the production build check:

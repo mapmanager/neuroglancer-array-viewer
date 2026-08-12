@@ -7,7 +7,7 @@ import unittest
 import numpy as np
 from acqstore.acq_image import AcqImage
 
-from acqimage_ng import acquisition_to_ng
+from ng_viewer.acqimage import acquisition_to_ng
 
 
 class AcqImageNgTests(unittest.TestCase):

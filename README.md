@@ -1,6 +1,6 @@
-# ng-array-demo v2
+# Neuroglancer Array Viewer
 
-Fresh, standalone v2 Neuroglancer experiments. There is no CloudScope, NiceWidgets, or NiceGUI.
+Framework-neutral Python and JavaScript integration for viewing NumPy and AcqImage volumes with Neuroglancer. The distribution is `neuroglancer-array-viewer`; the Python import is `ng_viewer`.
 
 The default demo is a repaired Python `LocalVolume` reference displayed in an iframe controlled by our own page. A separate `direct-js/` app mounts Neuroglancer directly into our `<div>`. It can show the known-supported public FIB-25 source or AcqImage-backed NumPy datasets supplied by the local Python transport.
 
@@ -45,16 +45,16 @@ npm run dev
 
 Open the Vite URL it prints. This is a direct mount into our `<div>` with no iframe. Its custom toolbar includes composite XY, one-XY-panel-per-channel side-by-side and stacked layouts, XY + 3D, 4-panel, and 3D. A right-side overlay provides per-channel LUT color and linked slider/number contrast controls. A shared vertical Z rail appears for multi-plane XY/channel layouts, and an Options menu controls presentation, native and custom chrome visibility, and fit-to-image. It requires internet access only for the public demonstration datasource. See `direct-js/README.md`.
 
-AcqStore is an optional demo/loading dependency, not a core Neuroglancer viewer dependency. The current local AcqStore checkout requires Python 3.12 or newer. Install the optional editable sibling integration with:
+AcqStore is a development/demo dependency, not a core viewer dependency. The local development environment installs the editable sibling automatically on Python 3.12 or newer:
 
 ```bash
-uv sync --extra acqstore-demo
+uv sync
 ```
 
 For the NumPy transport milestones, run this from the project root in another terminal:
 
 ```bash
-uv run --extra acqstore-demo python direct_numpy_server.py
+uv run python direct_numpy_server.py
 ```
 
 The direct selector includes the original A/B/C arrays, two long Gaussian-band AcqImage synthetics (`C,Y,X = 2,50000,1024` and `1,30000,100`), and the `rr30a-two-channel` AcqStore sample. The server creates volumes lazily. Selecting rr30a calls `ensure_sample_file`, downloads and caches it when absent, then opens the local path with `AcqImage`. The server calculates each materialized channel's exact observed minimum and maximum once; those values remain the hard slider limits. A uint16 histogram supplies a separate 1st–99th percentile automatic range used for initial display and each channel's Auto button.
@@ -65,13 +65,13 @@ The direct adapter publishes view-state snapshots through `getViewState()` and `
 
 ### Public Python wrapper
 
-`NgArrayViewer` owns registered datasets, transport lifecycle, browser configuration, live dataset selection, and non-blocking typed callbacks. It is independent of NiceGUI: any Python web host can embed `viewer.viewer_url`, while the same wrapper supplies pixels and receives state. The direct-JS development server remains a separate frontend process in this development version.
+`NgArrayViewer` owns registered datasets, the packaged frontend, transport lifecycle, browser configuration, live dataset selection, and non-blocking typed callbacks. It is independent of NiceGUI: any Python web host can embed `viewer.viewer_url`, while the same one-process wrapper supplies pixels and receives state. Vite is needed only while developing the frontend.
 
 ```python
 from acqstore.acq_image import AcqImage
 from acqstore.sample_data import ensure_sample_file
 
-from ng_array_viewer import NgArrayViewer, NgConfig, ViewState
+from ng_viewer import NgArrayViewer, NgConfig, ViewState
 
 
 acq = AcqImage(str(ensure_sample_file("rr30a-two-channel")))
@@ -86,7 +86,8 @@ def on_view_state(state: ViewState) -> None:
 
 unsubscribe = viewer.subscribe_view_state(on_view_state)
 viewer.start()
-print(viewer.transport_url, viewer.viewer_url)
+print(viewer.viewer_url)
+viewer.wait()
 
 # During shutdown:
 unsubscribe()

@@ -6,7 +6,7 @@ import unittest
 
 import numpy as np
 
-from contrast import uint16_channel_contrast, volume_channel_contrast
+from ng_viewer.contrast import uint16_channel_contrast, volume_channel_contrast
 
 
 class ContrastTests(unittest.TestCase):

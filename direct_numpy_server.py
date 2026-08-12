@@ -19,9 +19,9 @@ from neuroglancer.json_utils import json_encoder_default
 from acqstore.acq_image import AcqImage
 from acqstore.sample_data import ensure_sample_file
 
-from acqimage_ng import NgVolumeData, acquisition_to_ng
-from contrast import volume_channel_contrast
-from ng_array_viewer import NgArrayViewer, NgConfig, ViewState
+from ng_viewer import NgArrayViewer, NgConfig, ViewState
+from ng_viewer.acqimage import NgVolumeData, acquisition_to_ng
+from ng_viewer.contrast import volume_channel_contrast
 from server import DATASETS, make_dataset
 
 

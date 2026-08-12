@@ -3,11 +3,11 @@
 from __future__ import annotations
 
 import json
-import queue
 import threading
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from enum import StrEnum
+from importlib.resources import files
+import mimetypes
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any
@@ -17,130 +17,11 @@ import neuroglancer
 import numpy as np
 from neuroglancer.json_utils import json_encoder_default
 
-from acqimage_ng import NgVolumeData, acquisition_to_ng
-from contrast import volume_channel_contrast
-
-
-class ChromePlacement(StrEnum):
-    """Supported positions for the project-owned layout chrome."""
-
-    OVERLAY_TOP = "overlay_top"
-    OVERLAY_LEFT = "overlay_left"
-    OVERLAY_BOTTOM = "overlay_bottom"
-    OUTSIDE = "outside"
-
-
-class ViewerLayout(StrEnum):
-    """Layouts emitted by the direct viewer's public state contract."""
-
-    XY = "xy"
-    CHANNELS_ROW = "channels-row"
-    CHANNELS_COLUMN = "channels-column"
-    XY_3D = "xy-3d"
-    FOUR_PANEL_ALT = "4panel-alt"
-    THREE_D = "3d"
-
-
-@dataclass(frozen=True)
-class NgConfig:
-    """Initial presentation and navigation configuration.
-
-    Attributes:
-        chrome_placement: Position of the project-owned layout toolbar.
-        show_options_control: Whether the Options button is available.
-        show_z_control: Whether multi-plane datasets show the Z rail.
-        show_scale_bar: Initial native scale-bar visibility.
-        show_axis_lines: Initial native axis-line visibility.
-        show_display_dimensions: Initial native X/Y/Z widget visibility.
-        show_native_layout_buttons: Initial native layout-button visibility.
-        show_channels_control: Initial project-owned Channels visibility.
-        show_layout_control: Initial project-owned Layout visibility.
-    """
-
-    chrome_placement: ChromePlacement = ChromePlacement.OVERLAY_TOP
-    show_options_control: bool = True
-    show_z_control: bool = True
-    show_scale_bar: bool = False
-    show_axis_lines: bool = False
-    show_display_dimensions: bool = False
-    show_native_layout_buttons: bool = False
-    show_channels_control: bool = False
-    show_layout_control: bool = False
-
-    def to_json(self) -> dict[str, object]:
-        """Return the browser-facing camel-case configuration.
-
-        Returns:
-            JSON-compatible configuration dictionary.
-        """
-        return {
-            "chromePlacement": self.chrome_placement.value,
-            "showOptionsControl": self.show_options_control,
-            "showZControl": self.show_z_control,
-            "showScaleBar": self.show_scale_bar,
-            "showAxisLines": self.show_axis_lines,
-            "showDisplayDimensions": self.show_display_dimensions,
-            "showNativeLayoutButtons": self.show_native_layout_buttons,
-            "showChannelsControl": self.show_channels_control,
-            "showLayoutControl": self.show_layout_control,
-        }
-
-
-@dataclass(frozen=True)
-class AxisRange:
-    """One calibrated visible-axis interval."""
-
-    minimum: float
-    maximum: float
-    unit: str
-
-
-@dataclass(frozen=True)
-class ViewState:
-    """Typed semantic state emitted when the browser view changes."""
-
-    dataset_id: str
-    layout: ViewerLayout
-    x: AxisRange | None
-    y: AxisRange | None
-    z: float | None
-    z_unit: str | None
-    raw: dict[str, object]
-
-    @classmethod
-    def from_json(cls, value: dict[str, object]) -> ViewState:
-        """Parse one browser snapshot.
-
-        Args:
-            value: Browser JSON view-state object.
-
-        Returns:
-            Validated typed state retaining the original JSON.
-
-        Raises:
-            ValueError: If required fields or a known layout are missing.
-        """
-        dataset_id = value.get("datasetId")
-        if not isinstance(dataset_id, str) or not dataset_id:
-            raise ValueError("View state requires a non-empty datasetId")
-        try:
-            layout = ViewerLayout(str(value["layout"]))
-        except (KeyError, ValueError) as error:
-            raise ValueError(f"Unsupported viewer layout: {value.get('layout')!r}") from error
-        bounds = value.get("xyPhysicalBounds")
-        panel = bounds[0] if isinstance(bounds, list) and bounds else None
-
-        def axis(name: str) -> AxisRange | None:
-            item = panel.get(name) if isinstance(panel, dict) else None
-            if not isinstance(item, dict):
-                return None
-            return AxisRange(float(item["min"]), float(item["max"]), str(item.get("unit", "")))
-
-        position = value.get("physicalPosition")
-        z_value = position.get("z") if isinstance(position, dict) else None
-        z = float(z_value["value"]) if isinstance(z_value, dict) and "value" in z_value else None
-        z_unit = str(z_value.get("unit", "")) if isinstance(z_value, dict) else None
-        return cls(dataset_id, layout, axis("x"), axis("y"), z, z_unit, dict(value))
+from .acqimage import NgVolumeData, acquisition_to_ng
+from .config import NgConfig
+from .contrast import volume_channel_contrast
+from .models import ViewState
+from .transport import ViewStateDispatcher
 
 
 @dataclass
@@ -153,51 +34,6 @@ class _Dataset:
     lock: threading.Lock = field(default_factory=threading.Lock)
 
 
-class _ViewStateDispatcher:
-    """Dispatch newest typed state without blocking an HTTP request."""
-
-    def __init__(self) -> None:
-        self.callbacks: set[Callable[[ViewState], None]] = set()
-        self.lock = threading.Lock()
-        self.pending: queue.Queue[ViewState | None] = queue.Queue(maxsize=1)
-        self.thread = threading.Thread(target=self._run, daemon=True)
-        self.thread.start()
-
-    def subscribe(self, callback: Callable[[ViewState], None]) -> Callable[[], None]:
-        """Register a callback and return its unsubscriber."""
-        if not callable(callback):
-            raise TypeError("View-state callback must be callable")
-        with self.lock:
-            self.callbacks.add(callback)
-        return lambda: self._discard(callback)
-
-    def _discard(self, callback: Callable[[ViewState], None]) -> None:
-        with self.lock:
-            self.callbacks.discard(callback)
-
-    def publish(self, state: ViewState) -> None:
-        try:
-            self.pending.put_nowait(state)
-        except queue.Full:
-            self.pending.get_nowait()
-            self.pending.put_nowait(state)
-
-    def close(self) -> None:
-        try:
-            self.pending.put_nowait(None)
-        except queue.Full:
-            self.pending.get_nowait()
-            self.pending.put_nowait(None)
-        self.thread.join(timeout=1)
-
-    def _run(self) -> None:
-        while (state := self.pending.get()) is not None:
-            with self.lock:
-                callbacks = tuple(self.callbacks)
-            for callback in callbacks:
-                callback(state)
-
-
 class NgArrayViewer:
     """Own datasets, transport lifecycle, configuration, and callbacks."""
 
@@ -207,7 +43,7 @@ class NgArrayViewer:
         *,
         host: str = "127.0.0.1",
         port: int = 0,
-        frontend_url: str = "http://127.0.0.1:5173/",
+        frontend_url: str | None = None,
     ) -> None:
         """Create a stopped viewer application.
 
@@ -215,7 +51,8 @@ class NgArrayViewer:
             config: Initial browser presentation configuration.
             host: Transport bind address.
             port: Transport port, or zero for an available port.
-            frontend_url: URL of the direct-JS client embedded by a host app.
+            frontend_url: Optional development-client URL. By default this
+                wrapper serves its packaged production frontend.
         """
         self.config = config
         self.host = host
@@ -224,14 +61,14 @@ class NgArrayViewer:
         self._datasets: dict[str, _Dataset] = {}
         self._selected: str | None = None
         self._revision = 0
-        self._dispatcher = _ViewStateDispatcher()
+        self._dispatcher = ViewStateDispatcher()
         self._server: ThreadingHTTPServer | None = None
         self._thread: threading.Thread | None = None
 
     @property
     def viewer_url(self) -> str:
         """Return the frontend URL suitable for an iframe or web component."""
-        return self.frontend_url
+        return self.frontend_url or f"{self.transport_url}/"
 
     @property
     def transport_url(self) -> str:
@@ -267,17 +104,45 @@ class NgArrayViewer:
         axis_units: dict[str, str] | None = None,
         name: str | None = None,
     ) -> None:
-        """Register a NumPy array using AcqImage's public metadata contract."""
-        from acqstore.acq_image import AcqImage
+        """Register a NumPy array without requiring AcqStore.
 
-        acquisition = AcqImage.from_array(
-            array,
-            axes=axes,
-            source_id=key,
-            axis_spacing=axis_spacing,
-            axis_units=axis_units,
+        Args:
+            key: Unique browser-safe dataset identifier.
+            array: uint16 pixels with axes described by ``axes``.
+            axes: Unique C/Z/Y/X axis names; Y and X are required.
+            axis_spacing: Optional physical step size by source axis.
+            axis_units: Optional physical unit by source axis.
+            name: Optional display name.
+
+        Raises:
+            TypeError: If pixels are not uint16.
+            ValueError: If axes are invalid or unsupported.
+        """
+        source = np.asarray(array)
+        source_axes = tuple(axis.upper() for axis in axes)
+        if source.dtype != np.uint16:
+            raise TypeError(f"Expected uint16 pixels; got {source.dtype}")
+        if len(source_axes) != source.ndim or len(source_axes) != len(set(source_axes)):
+            raise ValueError("Axes must be unique and match the array rank")
+        if not {"Y", "X"}.issubset(source_axes) or set(source_axes) - {"C", "Z", "Y", "X"}:
+            raise ValueError(f"Expected C/Z/Y/X axes containing Y and X; got {source_axes!r}")
+        present = tuple(axis for axis in ("C", "Z", "Y", "X") if axis in source_axes)
+        czyx = source.transpose(tuple(source_axes.index(axis) for axis in present))
+        if "C" not in source_axes:
+            czyx = czyx[np.newaxis, ...]
+        if "Z" not in source_axes:
+            czyx = czyx[:, np.newaxis, ...]
+        data_cxyz = np.ascontiguousarray(np.flip(czyx.swapaxes(-2, -1), axis=-2).transpose(0, 3, 2, 1))
+        spacing = axis_spacing or {}
+        units = axis_units or {}
+        volume_data = NgVolumeData(
+            data_cxyz=data_cxyz,
+            scales=(1.0, float(spacing.get("Y", 1)), float(spacing.get("X", 1)), float(spacing.get("Z", 1))),
+            units=("", str(units.get("Y", "")), str(units.get("X", "")), str(units.get("Z", ""))),
+            source_axes=source_axes,
+            source_shape=tuple(source.shape),
         )
-        self.register_acqimage(key, acquisition, name=name)
+        self.register_volume_data(key, lambda: volume_data, name=name)
 
     def register_volume_data(
         self,
@@ -329,6 +194,25 @@ class NgArrayViewer:
         self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
         self._thread.start()
         return self
+
+    def wait(self) -> None:
+        """Block until Ctrl+C, then stop cleanly.
+
+        Raises:
+            RuntimeError: If the viewer has not been started.
+        """
+        if self._server is None:
+            raise RuntimeError("Call start() before wait()")
+        try:
+            threading.Event().wait()
+        except KeyboardInterrupt:
+            self.stop()
+
+    def run(self) -> None:
+        """Start, print the viewer URL, and block until Ctrl+C."""
+        self.start()
+        print(f"Neuroglancer viewer: {self.viewer_url}")
+        self.wait()
 
     def stop(self) -> None:
         """Stop transport and callback resources; repeated calls are safe."""
@@ -407,6 +291,11 @@ class NgArrayViewer:
                         self.send_header("Content-Type", content_type)
                         self.send_header("Content-Length", str(len(payload)))
                         self.end_headers(); self.wfile.write(payload); return
+                    request_path = urlparse(self.path).path
+                    if request_path == "/":
+                        return self._static("index.html")
+                    if request_path.startswith("/assets/"):
+                        return self._static(request_path.removeprefix("/"))
                 except KeyError:
                     self.send_error(HTTPStatus.NOT_FOUND); return
                 except Exception as error:
@@ -430,6 +319,20 @@ class NgArrayViewer:
                 payload = json.dumps(value, default=json_encoder_default, separators=(",", ":")).encode()
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "application/json")
+                self.send_header("Content-Length", str(len(payload)))
+                self.end_headers(); self.wfile.write(payload)
+
+            def _static(self, relative_path: str) -> None:
+                """Serve one packaged frontend asset."""
+                if ".." in relative_path.split("/"):
+                    self.send_error(HTTPStatus.BAD_REQUEST); return
+                resource = files("ng_viewer").joinpath("static", *relative_path.split("/"))
+                if not resource.is_file():
+                    self.send_error(HTTPStatus.NOT_FOUND); return
+                payload = resource.read_bytes()
+                content_type = mimetypes.guess_type(relative_path)[0] or "application/octet-stream"
+                self.send_response(HTTPStatus.OK)
+                self.send_header("Content-Type", content_type)
                 self.send_header("Content-Length", str(len(payload)))
                 self.end_headers(); self.wfile.write(payload)
 

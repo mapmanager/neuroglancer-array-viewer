@@ -10,6 +10,10 @@ const numpyProxy = {
 };
 
 export default defineConfig({
+  build: {
+    outDir: "../src/ng_viewer/static",
+    emptyOutDir: true,
+  },
   server: {
     proxy: numpyProxy,
   },

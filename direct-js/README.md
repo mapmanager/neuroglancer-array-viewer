@@ -11,14 +11,16 @@ npm ci
 npm run dev
 ```
 
-To test NumPy transport and replacement, start its Python data server from the project root in another terminal before selecting a NumPy dataset:
+For frontend hot-reload development, start the Python data server from the project root before selecting a NumPy dataset:
 
 ```bash
-uv sync --extra acqstore-demo
-uv run --extra acqstore-demo python direct_numpy_server.py
+uv sync
+uv run python direct_numpy_server.py
 ```
 
-AcqStore is an optional editable dependency from `../acqstore` and requires Python 3.12 or newer. It is used by this demo loader/transport only; it is not required by the core viewer installation.
+AcqStore is installed from editable `../acqstore` by the default development group on Python 3.12 or newer. It is not required by the installed core viewer or `register_numpy()`.
+
+`npm run build` writes the verified production bundle to `src/ng_viewer/static/`. Those assets ship with the Python distribution and are served by `NgArrayViewer`, so application users need only one Python process. Vite remains the two-process development path because it provides frontend hot reload.
 
 Node.js 22.18 or newer is required by this Neuroglancer revision. The public source requires network access and WebGL2. Its metadata describes a single-channel `uint8` electron-microscopy image with X/Y/Z dimensions, 8 nm isotropic voxels at full resolution, and a full-resolution shape of 6446 × 6643 × 8090. It has no C or T dimension.
 
@@ -36,7 +38,7 @@ The custom Options menu owns scale-bar, axis-line, display-dimensions, native-la
 
 The right-docked Channels overlay is generated from the active preset. Each channel has a color picker, a synchronized two-handle contrast range, exact min/max number inputs, and an Auto button. The slider/number domain is the exact observed channel minimum/maximum. Initial contrast and Auto use the server-calculated 1st–99th percentile range. Every channel is a separate additive image layer whose pinned-upstream `#uicontrol invlerp` selects the corresponding shader channel and whose `vec3 color` control sets its LUT color. The invlerp control's `range` is the active contrast mapping, while its `window` is the allowed UI/histogram domain. Updates stay in JavaScript and do not wait for Python.
 
-The adapter exposes `getViewState()` and `subscribeViewState(callback)`. State includes dataset/source identity, revision, named index and calibrated physical positions, units/scales, layout, and both index and physical XY limits derived from each live slice panel's pinned projection matrix. Vite coalesces changes and posts them to `/api/view-state`; `ViewStateDispatcher.subscribe()` provides non-blocking Python callbacks and returns an unsubscribe function. The included `log_view_state()` callback logs calibrated X/Y/Z with units. This narrow bridge is separate from the adapter and is optional when only the public datasource is running.
+The adapter exposes `getViewState()` and `subscribeViewState(callback)`. State includes dataset/source identity, revision, named index and calibrated physical positions, units/scales, layout, and both index and physical XY limits derived from each live slice panel's pinned projection matrix. The browser coalesces changes and posts them to `/api/view-state`; `NgArrayViewer.subscribe_view_state()` provides non-blocking typed Python callbacks and returns an unsubscribe function.
 
 Neuroglancer's default-viewer stylesheet assumes it owns the full page and sets document overflow to hidden. This wrapper overrides that rule only on `.ng-array-demo-page`, so the embedded viewer retains its layout while the surrounding page and diagnostics remain scrollable.
 

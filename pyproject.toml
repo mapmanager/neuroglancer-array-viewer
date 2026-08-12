@@ -1,5 +1,5 @@
 [project]
-name = "ng-array-demo"
+name = "neuroglancer-array-viewer"
 version = "2.0.0"
 description = "Standalone Neuroglancer GitHub-master integration experiments"
 readme = "README.md"
@@ -9,11 +9,27 @@ dependencies = [
   "numpy>=2.1,<3",
 ]
 
-[project.optional-dependencies]
-acqstore-demo = ["acqstore; python_version >= '3.12'"]
+[dependency-groups]
+dev = [
+  "acqstore; python_version >= '3.12'",
+  "pytest>=9,<10",
+]
 
 [tool.uv]
-package = false
+package = true
 
 [tool.uv.sources]
 acqstore = { path = "../acqstore", editable = true }
+
+[build-system]
+requires = ["setuptools>=80"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ng_viewer = ["static/**/*"]

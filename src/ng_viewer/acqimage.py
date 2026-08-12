@@ -1,12 +1,14 @@
-"""Small AcqImage-to-Neuroglancer boundary used only by the demo server."""
+"""AcqImage-to-Neuroglancer array and calibration conversion."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import numpy as np
-from acqstore.acq_image import AcqImage, AcqPixels
+
+if TYPE_CHECKING:
+    from acqstore.acq_image import AcqImage, AcqPixels
 
 
 @dataclass(frozen=True)
@@ -28,7 +30,7 @@ class NgVolumeData:
     source_shape: tuple[int, ...]
 
 
-def acq_pixels_to_ng(pixels: AcqPixels) -> NgVolumeData:
+def acq_pixels_to_ng(pixels: "AcqPixels") -> NgVolumeData:
     """Materialize and orient AcqStore pixels as contiguous ``C,X,Y,Z``.
 
     Every source ``(Y, X)`` plane is transposed and then flipped along its new
@@ -80,7 +82,7 @@ def acq_pixels_to_ng(pixels: AcqPixels) -> NgVolumeData:
     )
 
 
-def acquisition_to_ng(acquisition: AcqImage) -> NgVolumeData:
+def acquisition_to_ng(acquisition: "AcqImage") -> NgVolumeData:
     """Return display-oriented full-resolution pixels for one acquisition.
 
     Args:
@@ -95,7 +97,7 @@ def acquisition_to_ng(acquisition: AcqImage) -> NgVolumeData:
     return acq_pixels_to_ng(acquisition.pixels)
 
 
-def _axis_values(pixels: AcqPixels, values: tuple[Any, ...], *, default: Any) -> dict[str, Any]:
+def _axis_values(pixels: "AcqPixels", values: tuple[Any, ...], *, default: Any) -> dict[str, Any]:
     """Associate an AcqPixels metadata tuple with its named axes.
 
     Args:

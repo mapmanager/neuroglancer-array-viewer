@@ -1254,27 +1254,32 @@ dependencies = [
 ]
 
 [[package]]
-name = "ng-array-demo"
+name = "neuroglancer-array-viewer"
 version = "2.0.0"
-source = { virtual = "." }
+source = { editable = "." }
 dependencies = [
     { name = "neuroglancer" },
     { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
     { name = "numpy", version = "2.5.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
 ]
 
-[package.optional-dependencies]
-acqstore-demo = [
+[package.dev-dependencies]
+dev = [
     { name = "acqstore", marker = "python_full_version >= '3.12'" },
+    { name = "pytest" },
 ]
 
 [package.metadata]
 requires-dist = [
-    { name = "acqstore", marker = "python_full_version >= '3.12' and extra == 'acqstore-demo'", editable = "../acqstore" },
     { name = "neuroglancer", git = "https://github.com/google/neuroglancer?rev=576c94b08ad7609919eb42f8a93b9cf0e161df14" },
     { name = "numpy", specifier = ">=2.1,<3" },
 ]
-provides-extras = ["acqstore-demo"]
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "acqstore", marker = "python_full_version >= '3.12'", editable = "../acqstore" },
+    { name = "pytest", specifier = ">=9,<10" },
+]
 
 [[package]]
 name = "numcodecs"
@@ -1879,11 +1884,11 @@ name = "pytest"
 version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "colorama", marker = "python_full_version >= '3.12' and sys_platform == 'win32'" },
-    { name = "iniconfig", marker = "python_full_version >= '3.12'" },
-    { name = "packaging", marker = "python_full_version >= '3.12'" },
-    { name = "pluggy", marker = "python_full_version >= '3.12'" },
-    { name = "pygments", marker = "python_full_version >= '3.12'" },
+    { name = "colorama", marker = "sys_platform == 'win32'" },
+    { name = "iniconfig" },
+    { name = "packaging" },
+    { name = "pluggy" },
+    { name = "pygments" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/e4/47/b9efed96c114afcfa3c9d3fe98a76a1d14c74a9e266d397cf6eb64be5e01/pytest-9.1.1.tar.gz", hash = "sha256:1088fbde8f2b49d95a549a195707afa7a76a3ce9bcadc26b6d71f0ffda5fe313", size = 1636369, upload-time = "2026-06-19T10:58:32.857Z" }
 wheels = [
