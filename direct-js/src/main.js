@@ -6,9 +6,10 @@ import { NgImageViewer } from "./NgImageViewer.js";
 const $ = (selector) => document.querySelector(selector);
 const diagnostics = $("#diagnostics");
 const status = $("#status");
-let editingZ = false;
 let lastDiagnostics = "";
 let channelSignature = "";
+const Z_RAIL_LAYOUTS = new Set(["xy", "channels-row", "channels-column"]);
+const chromeVisibility = {channels: true, layout: true};
 
 function renderChannelControls(channels) {
   const signature = JSON.stringify(
@@ -56,9 +57,23 @@ function render(value) {
     lastDiagnostics = serialized;
   }
   status.textContent = `Direct mount · ${value.layout}`;
-  if (!editingZ && Number.isFinite(value.z)) $("#z").value = String(Math.floor(value.z));
-  $("#scale-bar").checked = value.showScaleBar;
-  $("#axis-lines").checked = value.showAxisLines;
+  $("#option-scale-bar").checked = value.showScaleBar;
+  $("#option-axis-lines").checked = value.showAxisLines;
+  $("#option-display-dimensions").checked = value.showDisplayDimensions;
+  $("#option-native-layout-buttons").checked = value.showNativeLayoutButtons;
+  $("#option-channel-controls").checked = chromeVisibility.channels;
+  $("#option-layout-controls").checked = chromeVisibility.layout;
+  const zBounds = value.zBounds;
+  const showZ = zBounds?.count > 1 && Z_RAIL_LAYOUTS.has(value.layout);
+  $("#z-chrome").hidden = !showZ;
+  $("#viewer-stage").classList.toggle("has-z", showZ);
+  if (showZ) {
+    const z = Math.floor(value.z);
+    $("#z-slider").min = String(zBounds.min);
+    $("#z-slider").max = String(zBounds.max);
+    $("#z-slider").value = String(z);
+    $("#z-readout").value = `${z}/${zBounds.max}`;
+  }
   renderChannelControls(value.channels ?? []);
   for (const button of document.querySelectorAll("[data-layout]")) {
     button.classList.toggle("active", button.dataset.layout === value.layout);
@@ -105,19 +120,32 @@ $("#datasource").addEventListener("change", async (event) => {
     console.error(error);
   }
 });
-$("#z").addEventListener("focus", () => { editingZ = true; });
-$("#z").addEventListener("blur", () => { editingZ = false; });
-$("#z").addEventListener("input", (event) => adapter.setZ(event.target.value));
-$("#scale-bar").addEventListener("change", (event) => adapter.setScaleBar(event.target.checked));
-$("#axis-lines").addEventListener("change", (event) => adapter.setAxisLines(event.target.checked));
-$("#reset").addEventListener("click", async () => {
-  status.textContent = "Resetting dataset…";
-  try {
-    await adapter.setSource($("#datasource").value);
-  } catch (error) {
-    status.textContent = "Dataset failed: " + error.message;
-    console.error(error);
-  }
+$("#z-slider").addEventListener("input", (event) => adapter.setZ(event.target.value));
+$("#option-scale-bar").addEventListener("change", (event) => adapter.setScaleBar(event.target.checked));
+$("#option-axis-lines").addEventListener("change", (event) => adapter.setAxisLines(event.target.checked));
+$("#option-display-dimensions").addEventListener("change", (event) => {
+  adapter.setDisplayDimensions(event.target.checked);
+});
+$("#option-native-layout-buttons").addEventListener("change", (event) => {
+  adapter.setNativeLayoutButtons(event.target.checked);
+});
+$("#option-channel-controls").addEventListener("change", (event) => {
+  chromeVisibility.channels = event.target.checked;
+  $("#channel-chrome").hidden = !chromeVisibility.channels;
+});
+$("#option-layout-controls").addEventListener("change", (event) => {
+  chromeVisibility.layout = event.target.checked;
+  $("#layout-chrome").hidden = !chromeVisibility.layout;
+});
+$("#option-fit-image").addEventListener("click", () => {
+  adapter.fitImage();
+  $("#options-chrome").open = false;
+});
+document.addEventListener("pointerdown", (event) => {
+  if (!event.target.closest("#options-chrome")) $("#options-chrome").open = false;
+});
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") $("#options-chrome").open = false;
 });
 $("#channel-toggle").addEventListener("click", (event) => {
   const collapsed = $("#channel-chrome").classList.toggle("collapsed");

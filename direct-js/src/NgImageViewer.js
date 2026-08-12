@@ -42,6 +42,7 @@ const SOURCE_PRESETS = {
     name: "FIB-25 public image",
     dimensions: {x:[8e-9,"m"], y:[8e-9,"m"], z:[8e-9,"m"]},
     position: [2980.1868, 3153.9294, 4045],
+    displayShapeXYZ: [6446, 6643, 8090],
     crossSectionScale: 2.886371,
     channels: [{index:0, name:"image", color:"#ffffff", domain:[0,255], autoContrast:[0,255], contrast:[0,255]}],
   },
@@ -146,6 +147,8 @@ export class NgImageViewer {
    */
   constructor(target, onChange = () => {}) {
     this.target = target;
+    this.showDisplayDimensions = true;
+    this.showNativeLayoutButtons = true;
     this.viewer = setupDefaultViewer({target});
     this.onChange = onChange;
     this.subscribers = new Set();
@@ -201,10 +204,11 @@ export class NgImageViewer {
     const generation = (this.sourceGeneration ?? 0) + 1;
     this.sourceGeneration = generation;
     let channels = preset.channels;
+    let metadata = null;
     if (preset.dataset) {
       const response = await fetch(`/api/dataset/${preset.dataset.key}`);
       if (!response.ok) throw new Error(`Dataset metadata failed: ${response.status} ${response.statusText}`);
-      const metadata = await response.json();
+      metadata = await response.json();
       channels = preset.channels.map((channel, index) => {
         const domain = metadata.channelRanges?.[index];
         const autoContrast = metadata.channelAutoRanges?.[index];
@@ -220,6 +224,9 @@ export class NgImageViewer {
     if (generation !== this.sourceGeneration) return false;
     this.presetName = presetName;
     this.source = preset.source;
+    this.activeDisplayShapeXYZ = metadata?.shapeCXYZ?.slice(1)
+      ?? preset.dataset?.displayShapeXYZ
+      ?? preset.displayShapeXYZ;
     this.currentLayout = "xy";
     this.channels = channels.map((channel) => ({
       ...channel,
@@ -308,6 +315,43 @@ export class NgImageViewer {
   setAxisLines(value) { this.viewer.showAxisLines.value = Boolean(value); }
 
   /**
+   * Shows or hides Neuroglancer's native display-dimensions widget.
+   *
+   * Neuroglancer has no state flag for this structural widget at the pinned
+   * revision. The project stylesheet therefore scopes a verified upstream DOM
+   * selector to this adapter's target. Revalidate the selector when changing
+   * the pinned Neuroglancer commit.
+   *
+   * @param {boolean} value - Whether the X/Y/Z display-dimensions UI is shown.
+   */
+  setDisplayDimensions(value) {
+    this.showDisplayDimensions = Boolean(value);
+    this.target.classList.toggle(
+      "ng-array-demo-hide-display-dimensions",
+      !this.showDisplayDimensions,
+    );
+    this.emitDiagnostics();
+  }
+
+  /**
+   * Shows or hides both native per-panel layout-switch buttons.
+   *
+   * The pinned revision exposes no granular state flag for these structural
+   * buttons. A project-scoped stylesheet rule uses their verified exact title
+   * attributes and must be revalidated when the Neuroglancer pin changes.
+   *
+   * @param {boolean} value - Whether both native layout buttons are shown.
+   */
+  setNativeLayoutButtons(value) {
+    this.showNativeLayoutButtons = Boolean(value);
+    this.target.classList.toggle(
+      "ng-array-demo-hide-native-layout-buttons",
+      !this.showNativeLayoutButtons,
+    );
+    this.emitDiagnostics();
+  }
+
+  /**
    * Selects a supported built-in or per-channel layout.
    *
    * @param {string} value - Layout identifier.
@@ -334,6 +378,46 @@ export class NgImageViewer {
       this.viewer.layout.restoreState(value);
     }
     this.currentLayout = value;
+  }
+
+  /**
+   * Centers and fits the complete XY image into every visible XY panel.
+   *
+   * Dataset, contrast, colors, Z, and layout remain unchanged.
+   *
+   * @returns {boolean} True when at least one live XY panel was fitted.
+   */
+  fitImage() {
+    const shape = this.activeDisplayShapeXYZ;
+    if (!shape) return false;
+    const coordinateSpace = this.viewer.coordinateSpace.value;
+    const xIndex = coordinateSpace.names.indexOf("x");
+    const yIndex = coordinateSpace.names.indexOf("y");
+    if (xIndex < 0 || yIndex < 0) return false;
+
+    const requiredScales = [];
+    for (const panel of this.viewer.display.panels) {
+      const parameters = panel.sliceView?.projectionParameters?.value;
+      if (!parameters || !panel.visible) continue;
+      const {width, height, displayDimensionRenderInfo} = parameters;
+      const indices = [...displayDimensionRenderInfo.displayDimensionIndices];
+      const xSlot = indices.indexOf(xIndex);
+      const ySlot = indices.indexOf(yIndex);
+      if (xSlot < 0 || ySlot < 0 || width <= 0 || height <= 0) continue;
+      const factors = displayDimensionRenderInfo.canonicalVoxelFactors;
+      requiredScales.push(Math.max(
+        shape[0] * factors[xSlot] / (width * 0.92),
+        shape[1] * factors[ySlot] / (height * 0.88),
+      ));
+    }
+    if (requiredScales.length === 0) return false;
+
+    const position = Float32Array.from(this.viewer.position.value);
+    position[xIndex] = shape[0] / 2;
+    position[yIndex] = shape[1] / 2;
+    this.viewer.position.value = position;
+    this.viewer.crossSectionScale.value = Math.max(...requiredScales);
+    return true;
   }
 
   /** @param {number} index Channel index. @returns {string} Managed layer name. */
@@ -538,6 +622,15 @@ export class NgImageViewer {
     return index < 0 ? undefined : this.viewer.position.value[index];
   }
 
+  /** @returns {{min:number,max:number,count:number}|null} Active Z bounds. */
+  getZBounds() {
+    const count = this.activeDisplayShapeXYZ?.[2];
+    if (!Number.isInteger(count) || count < 1 || this.getZAxisIndex() < 0) {
+      return null;
+    }
+    return {min: 0, max: count - 1, count};
+  }
+
   /**
    * Sets the current Z coordinate.
    *
@@ -547,8 +640,13 @@ export class NgImageViewer {
   setZ(value) {
     const index = this.getZAxisIndex();
     if (index < 0) throw new Error("The current source has no z dimension");
+    const bounds = this.getZBounds();
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) throw new Error(`Invalid Z coordinate: ${value}`);
     const position = Float32Array.from(this.viewer.position.value);
-    position[index] = Number(value);
+    position[index] = bounds
+      ? Math.max(bounds.min, Math.min(bounds.max, Math.round(numeric)))
+      : numeric;
     this.viewer.position.value = position;
   }
 
@@ -612,9 +710,12 @@ export class NgImageViewer {
       iframeCount: this.target.querySelectorAll("iframe").length,
       zAxisIndex: this.getZAxisIndex(),
       z: this.getZ(),
+      zBounds: this.getZBounds(),
       layout,
       showScaleBar: this.viewer.showScaleBar.value,
       showAxisLines: this.viewer.showAxisLines.value,
+      showDisplayDimensions: this.showDisplayDimensions,
+      showNativeLayoutButtons: this.showNativeLayoutButtons,
       coordinateNames: [...this.viewer.coordinateSpace.value.names],
       position: [...this.viewer.position.value],
       xyBounds: viewState.xyBounds,
@@ -625,13 +726,14 @@ export class NgImageViewer {
       layers: this.getLayerDiagnostics(),
       chunkWorkerError: this.workerError,
       limitations: [
-        "The native per-panel related-layout buttons have no granular supported visibility flag at this pinned revision.",
+        "Native per-panel layout-button visibility uses project-scoped exact-title selectors verified at the pinned Neuroglancer revision because upstream exposes no granular state flag.",
         "The public preset uses an upstream-supported public datasource.",
         "The NumPy preset uses upstream's Python datasource protocol through a local same-origin proxy.",
         "Synthetic NumPy datasets are replaced as complete viewer states; rendered-pixel completion has no supported ready event.",
         "Selecting rr30a may wait while AcqStore downloads and caches the sample locally.",
         "The demo server lazily creates volumes but retains selected volumes for the process lifetime.",
         "Native scale bars and the coordinate widget expose names and units; the pinned slice canvas has no supported conventional ticked-axis-label API.",
+        "Display-dimensions visibility uses a project-scoped DOM selector verified at the pinned Neuroglancer revision because upstream exposes no granular state flag.",
         "XY bounds are derived from the pinned slice-panel projection API inside the adapter's unstable boundary."
       ]
     };

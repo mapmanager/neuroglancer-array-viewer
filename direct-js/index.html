@@ -31,10 +31,6 @@
             <option value="external">Outside viewer</option>
           </select>
         </label>
-        <label>Z coordinate <input id="z" type="number" step="1" value="4045" /></label>
-        <label><input id="scale-bar" type="checkbox" checked /> Scale bar</label>
-        <label><input id="axis-lines" type="checkbox" /> Axis lines</label>
-        <button id="reset" type="button">Reset source</button>
       </section>
 
       <section id="viewer-stage" class="viewer-stage placement-top">
@@ -52,6 +48,24 @@
           <div id="channel-controls" class="channel-controls"></div>
         </aside>
         <div id="ng-viewer" aria-label="Directly embedded Neuroglancer viewer"></div>
+        <aside id="z-chrome" class="z-chrome" aria-label="Z slice control" hidden>
+          <span class="z-title">Z</span>
+          <input id="z-slider" type="range" min="0" max="1" step="1" value="0" aria-label="Z slice" />
+          <output id="z-readout" for="z-slider">0/1</output>
+        </aside>
+        <details id="options-chrome" class="options-chrome">
+          <summary aria-label="Viewer options">Options</summary>
+          <div class="options-menu" aria-label="Viewer options">
+            <label><input id="option-scale-bar" type="checkbox" checked /> Scale bar</label>
+            <label><input id="option-axis-lines" type="checkbox" /> Axis lines</label>
+            <label><input id="option-display-dimensions" type="checkbox" checked /> Display dimensions</label>
+            <label><input id="option-native-layout-buttons" type="checkbox" checked /> Native layout buttons</label>
+            <label><input id="option-channel-controls" type="checkbox" checked /> Channels control</label>
+            <label><input id="option-layout-controls" type="checkbox" checked /> Layout controls</label>
+            <hr />
+            <button id="option-fit-image" type="button">Fit image</button>
+          </div>
+        </details>
       </section>
 
       <p>Direct mount: no iframe. NumPy sources are supplied by AcqImage; selecting rr30a downloads and caches the sample through AcqStore when needed. The custom floating toolbar is our DOM, not Neuroglancer chrome.</p>

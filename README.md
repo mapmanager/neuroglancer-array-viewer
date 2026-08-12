@@ -43,7 +43,7 @@ npm install
 npm run dev
 ```
 
-Open the Vite URL it prints. This is a direct mount into our `<div>` with no iframe. Its custom toolbar includes composite XY, one-XY-panel-per-channel side-by-side and stacked layouts, XY + 3D, 4-panel, and 3D. A right-side overlay provides per-channel LUT color and linked slider/number contrast controls. It requires internet access only for the public demonstration datasource. See `direct-js/README.md`.
+Open the Vite URL it prints. This is a direct mount into our `<div>` with no iframe. Its custom toolbar includes composite XY, one-XY-panel-per-channel side-by-side and stacked layouts, XY + 3D, 4-panel, and 3D. A right-side overlay provides per-channel LUT color and linked slider/number contrast controls. A shared vertical Z rail appears for multi-plane XY/channel layouts, and an Options menu controls presentation, native and custom chrome visibility, and fit-to-image. It requires internet access only for the public demonstration datasource. See `direct-js/README.md`.
 
 AcqStore is an optional demo/loading dependency, not a core Neuroglancer viewer dependency. The current local AcqStore checkout requires Python 3.12 or newer. Install the optional editable sibling integration with:
 
