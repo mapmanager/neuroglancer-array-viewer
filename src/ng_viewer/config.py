@@ -17,7 +17,25 @@ class ChromePlacement(StrEnum):
 
 @dataclass(frozen=True)
 class NgConfig:
-    """Initial viewer presentation and navigation configuration."""
+    """Initial viewer presentation and navigation configuration.
+
+    Attributes:
+        chrome_placement: Where the project-owned layout chrome is placed
+            relative to the Neuroglancer canvas.
+        show_options_control: Show the options / settings control in the
+            project chrome.
+        show_z_control: Show multi-plane Z navigation in the project chrome.
+        show_scale_bar: Show Neuroglancer's scale bar overlay.
+        show_axis_lines: Show Neuroglancer axis-line helpers.
+        show_display_dimensions: Show Neuroglancer display-dimension labels.
+        show_native_layout_buttons: Show Neuroglancer's built-in layout
+            buttons (in addition to any project chrome layout control).
+        show_channels_control: Show channel visibility / contrast controls.
+        show_layout_control: Show the project chrome layout selector.
+        show_dataset_control: Show the multi-dataset selector.
+        show_diagnostics: Show the diagnostics panel for browser payload
+            inspection.
+    """
 
     chrome_placement: ChromePlacement = ChromePlacement.OVERLAY_TOP
     show_options_control: bool = True

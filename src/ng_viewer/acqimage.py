@@ -1,4 +1,17 @@
-"""AcqImage-to-Neuroglancer array and calibration conversion."""
+"""AcqImage-to-Neuroglancer array and calibration conversion.
+
+Display orientation is a deliberate, fixed convention (not configurable):
+
+* Supported source axes are ``C`` / ``Z`` / ``Y`` / ``X`` only (``Y`` and ``X``
+  required). Missing ``C`` or ``Z`` are inserted as singleton axes.
+* Every source ``(Y, X)`` plane is rewritten as
+  ``display_yx = source_yx.T[::-1, :]`` before packing into Neuroglancer
+  ``LocalVolume`` order ``C,X,Y,Z``.
+* After that transform, Neuroglancer X tracks source Y, and Neuroglancer Y
+  tracks reversed source X. Physical spacing/units are remapped to match.
+* Pixel dtype is expected to be uint16 end-to-end with the rest of
+  ``ng_viewer`` (contrast histograms are uint16-sized).
+"""
 
 from __future__ import annotations
 
@@ -33,9 +46,9 @@ class NgVolumeData:
 def acq_pixels_to_ng(pixels: "AcqPixels") -> NgVolumeData:
     """Materialize and orient AcqStore pixels as contiguous ``C,X,Y,Z``.
 
-    Every source ``(Y, X)`` plane is transposed and then flipped along its new
-    display-Y axis. Consequently, Neuroglancer X corresponds to source Y while
-    Neuroglancer Y corresponds to reversed source X.
+    Applies the module-level display orientation convention so scientific
+    layouts match prior CloudScope / AcqStore viewers. See the module docstring
+    for the exact axis mapping.
 
     Args:
         pixels: Loaded AcqStore pixels containing Y/X and optional C/Z axes.
@@ -65,9 +78,8 @@ def acq_pixels_to_ng(pixels: "AcqPixels") -> NgVolumeData:
     if "Z" not in source_axes:
         source_czyx = source_czyx[:, np.newaxis, ...]
 
-    # Equivalent on each plane to: display_yx = source_yx.T[::-1, :].
-    # LocalVolume is indexed C,X,Y,Z, so the transpose back into named axes
-    # leaves source Y as display X and reversed source X as display Y.
+    # Hard-coded orientation: display_yx = source_yx.T[::-1, :], then pack
+    # LocalVolume as C,X,Y,Z (source Y → display X; reversed source X → display Y).
     display_czyx = np.flip(source_czyx.swapaxes(-2, -1), axis=-2)
     data_cxyz = np.ascontiguousarray(display_czyx.transpose(0, 3, 2, 1))
 

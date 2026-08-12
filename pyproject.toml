@@ -1,13 +1,45 @@
 [project]
 name = "neuroglancer-array-viewer"
 version = "2.0.0"
-description = "Standalone Neuroglancer GitHub-master integration experiments"
+description = "Framework-neutral Python viewer for NumPy and AcqImage volumes using a custom Neuroglancer frontend"
 readme = "README.md"
+license = "Apache-2.0"
 requires-python = ">=3.11,<3.14"
+authors = [
+  { name = "Robert H. Cudmore", email = "robert.cudmore@gmail.com" },
+]
+maintainers = [
+  { name = "Robert H. Cudmore", email = "robert.cudmore@gmail.com" },
+]
+keywords = [
+  "neuroglancer",
+  "numpy",
+  "volumetric",
+  "image-viewer",
+  "microscopy",
+  "acqstore",
+  "webgl",
+]
+classifiers = [
+  "Development Status :: 4 - Beta",
+  "Intended Audience :: Science/Research",
+  "License :: OSI Approved :: Apache Software License",
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.11",
+  "Programming Language :: Python :: 3.12",
+  "Programming Language :: Python :: 3.13",
+  "Topic :: Scientific/Engineering :: Visualization",
+  "Topic :: Scientific/Engineering :: Image Processing",
+]
 dependencies = [
   "neuroglancer @ git+https://github.com/google/neuroglancer@576c94b08ad7609919eb42f8a93b9cf0e161df14",
   "numpy>=2.1,<3",
 ]
+
+[project.urls]
+Homepage = "https://github.com/mapmanager/neuroglancer-array-viewer"
+Repository = "https://github.com/mapmanager/neuroglancer-array-viewer"
+Issues = "https://github.com/mapmanager/neuroglancer-array-viewer/issues"
 
 [dependency-groups]
 dev = [
@@ -19,7 +51,10 @@ dev = [
 package = true
 
 [tool.uv.sources]
-acqstore = { path = "../acqstore", editable = true }
+# Default: AcqStore from GitHub main (standalone clone).
+# For local cs_project sibling editable install, replace with:
+#   acqstore = { path = "../acqstore", editable = true }
+acqstore = { git = "https://github.com/mapmanager/acqstore", branch = "main" }
 
 [build-system]
 requires = ["setuptools>=80"]

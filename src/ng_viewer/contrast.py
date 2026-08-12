@@ -1,10 +1,17 @@
-"""Deterministic uint16 channel-contrast statistics."""
+"""Deterministic uint16 channel-contrast statistics.
+
+Volume registration and contrast helpers accept **uint16** pixels only. A
+fixed 65_536-bin histogram matches that domain without sorting large arrays.
+"""
 
 from __future__ import annotations
 
 import numpy as np
 
-
+# Default Auto contrast window: drop the darkest/brightest 1% so sparse hot
+# pixels and dark-floor noise do not collapse the display range, while still
+# covering nearly all of the observed intensity mass. Manual controls still
+# expose the full observed (min, max) domain separately from this Auto window.
 AUTO_PERCENTILES = (1.0, 99.0)
 
 
