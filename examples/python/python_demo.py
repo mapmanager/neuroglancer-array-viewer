@@ -38,7 +38,7 @@ viewer.start()
 print("Viewer:", viewer.viewer_url)
 
 # Optional: open the system browser automatically.
-# webbrowser.open(viewer.viewer_url)
+webbrowser.open(viewer.viewer_url)
 
 # Later, after registering another dataset:
 # viewer.select_dataset("another-dataset")

@@ -285,7 +285,35 @@ export class NgImageViewer {
       showAxisLines: false,
     });
     this.applyFitConfiguration();
+    await this.fitImageWhenReady(generation);
     return true;
+  }
+
+  /**
+   * Fits once the active source layers and XY projection are observable.
+   *
+   * This waits on Neuroglancer state and animation frames rather than a
+   * guessed loading delay. A newer source request cancels the old wait.
+   *
+   * @param {number} generation - Source request identity.
+   * @returns {Promise<boolean>} Whether the current source was fitted.
+   */
+  async fitImageWhenReady(generation) {
+    while (generation === this.sourceGeneration) {
+      const layersReady = this.channels.every((channel) => {
+        const name = this.getChannelLayerName(channel.index);
+        return this.viewer.layerManager.managedLayers
+          .find((managedLayer) => managedLayer.name === name)?.isReady() === true;
+      });
+      if (layersReady && this.fitImage()) {
+        // Let the fitted projection reach the compositor before callers reveal
+        // a canvas that was intentionally concealed during initial startup.
+        await new Promise((resolve) => requestAnimationFrame(resolve));
+        return generation === this.sourceGeneration;
+      }
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+    }
+    return false;
   }
 
   /** Applies the active fitted visual ratio after coordinate-space changes. */
@@ -359,7 +387,7 @@ export class NgImageViewer {
   setDisplayDimensions(value) {
     this.showDisplayDimensions = Boolean(value);
     this.target.classList.toggle(
-      "ng-array-demo-hide-display-dimensions",
+      "ng-viewer-hide-display-dimensions",
       !this.showDisplayDimensions,
     );
     this.emitChange();
@@ -377,7 +405,7 @@ export class NgImageViewer {
   setNativeLayoutButtons(value) {
     this.showNativeLayoutButtons = Boolean(value);
     this.target.classList.toggle(
-      "ng-array-demo-hide-native-layout-buttons",
+      "ng-viewer-hide-native-layout-buttons",
       !this.showNativeLayoutButtons,
     );
     this.emitChange();
@@ -732,9 +760,7 @@ export class NgImageViewer {
     }
     const viewState = this.getViewState();
     return {
-      phase: this.presetName?.startsWith("numpy-")
-        ? "Direct-JS multi-NumPy replacement milestone"
-        : "Direct-JS Phase A",
+      component: "Neuroglancer Array Viewer",
       datasourcePreset: this.presetName ?? "public",
       source: this.source ?? PUBLIC_SOURCE,
       dataset: SOURCE_PRESETS[this.presetName]?.dataset ?? null,

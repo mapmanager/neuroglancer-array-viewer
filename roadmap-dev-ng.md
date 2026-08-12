@@ -45,6 +45,10 @@ The deadlock was application structure: code holding one application lock called
 
 ## V2 implementation
 
+> Historical note: the iframe reference described below was retired after the
+> directly mounted, one-process `ng_viewer` package superseded it. `server.py`
+> and `web/` were removed; Git history retains their implementation.
+
 ### Repaired iframe reference
 
 `server.py`:
@@ -208,15 +212,14 @@ The first wrapper milestone implements the installable `neuroglancer-array-viewe
 
 ## Clean-room install and run
 
-From a fresh unzip, with Git, `uv`, compiler tools, and a suitable Node available:
+Current package clean-room workflow:
 
 ```bash
-cd ng-array-demo
-uv sync --frozen
-uv run python server.py
+uv sync
+uv run python examples/python/python_demo.py
 ```
 
-Visit `http://127.0.0.1:8000`, exercise all controls repeatedly, then use wheel and Ctrl+wheel inside the iframe while watching diagnostics.
+Open the single URL printed by Python and exercise viewer navigation and Options.
 
 For Phase A:
 

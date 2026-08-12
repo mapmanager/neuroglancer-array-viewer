@@ -3,29 +3,69 @@
 from __future__ import annotations
 
 import argparse
-import json
 import logging
-import queue
 import threading
-from collections.abc import Callable
-from http import HTTPStatus
-from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from dataclasses import dataclass
 
-import neuroglancer
 import numpy as np
-from neuroglancer.json_utils import json_encoder_default
 
 from acqstore.acq_image import AcqImage
 from acqstore.sample_data import ensure_sample_file
 
 from ng_viewer import NgArrayViewer, NgConfig, ViewState
 from ng_viewer.acqimage import NgVolumeData, acquisition_to_ng
-from ng_viewer.contrast import volume_channel_contrast
-from server import DATASETS, make_dataset
 
 
-SOURCE_PREFIX = "direct-demo-"
+@dataclass(frozen=True)
+class DatasetSpec:
+    """Describe one synthetic development dataset."""
+
+    key: str
+    shape_zcyx: tuple[int, int, int, int]
+    scales_um: tuple[float, float, float]
+
+
+DATASETS = {
+    "a": DatasetSpec("a", (70, 2, 1024, 1024), (0.25, 0.25, 1.0)),
+    "b": DatasetSpec("b", (31, 1, 512, 768), (0.65, 0.40, 2.5)),
+    "c": DatasetSpec("c", (18, 3, 640, 384), (0.18, 0.55, 0.8)),
+}
+
+
+def make_dataset(spec: DatasetSpec) -> np.ndarray:
+    """Create visibly distinct uint16 data in Z,C,Y,X order.
+
+    Args:
+        spec: Synthetic dataset definition.
+
+    Returns:
+        Newly allocated array matching ``spec.shape_zcyx``.
+    """
+    z_count, _, y_count, x_count = spec.shape_zcyx
+    yy, xx = np.ogrid[:y_count, :x_count]
+    data = np.empty(spec.shape_zcyx, dtype=np.uint16)
+    for z in range(z_count):
+        if spec.key == "a":
+            cx, cy = 260 + z * 7, 390 + int(90 * np.sin(z / 8))
+            circle = np.maximum(0, 1 - np.sqrt((xx - cx) ** 2 + (yy - cy) ** 2) / 180)
+            data[z, 0] = np.clip((circle + xx / (x_count - 1) * 0.25) * 52_000, 0, 65_535)
+            sx, sy = 690 - z * 5, 610 + int(70 * np.cos(z / 7))
+            outer = (np.abs(xx - sx) < 150) & (np.abs(yy - sy) < 150)
+            inner = (np.abs(xx - sx) < 95) & (np.abs(yy - sy) < 95)
+            data[z, 1] = np.where(outer & ~inner, 54_000, np.where(((xx + yy + z * 11) % 190) < 24, 15_000, 500))
+        elif spec.key == "b":
+            cx, cy = 100 + z * 17, y_count // 2 + int(90 * np.sin(z / 4))
+            diamond = np.maximum(0, 1 - (np.abs(xx - cx) + np.abs(yy - cy)) / 150)
+            data[z, 0] = np.where(((xx + z * 9) % 120) < 18, 12_000, 400) + (diamond * 50_000).astype(np.uint16)
+        else:
+            cx, cy = 70 + z * 14, 130 + z * 15
+            data[z, 0] = np.where((xx - cx) ** 2 + (yy - cy) ** 2 < 70**2, 52_000, 300)
+            rx, ry = x_count - 80 - z * 9, y_count // 2 + int(120 * np.sin(z / 3))
+            data[z, 1] = np.where((np.abs(xx - rx) < 55) & (np.abs(yy - ry) < 100), 47_000, 500)
+            data[z, 2] = np.where(((yy + z * 13) % 105) < 22, 38_000, 250)
+    return data
+
+
 RR30A_SAMPLE_ID = "rr30a-two-channel"
 DATASET_KEYS = (*DATASETS, "long-2c", "long-1c", "rr30a")
 LOGGER = logging.getLogger(__name__)
@@ -38,126 +78,6 @@ def configure_logging() -> None:
         format="%(asctime)s | %(filename)s | %(funcName)s | %(lineno)d | %(message)s",
         datefmt="%Y-%m-%d | %H:%M:%S",
     )
-
-
-class ViewStateDispatcher:
-    """Dispatch direct-viewer state snapshots without blocking HTTP requests."""
-
-    def __init__(self) -> None:
-        """Start the single background callback-dispatch thread."""
-        self._callbacks: set[Callable[[dict[str, object]], None]] = set()
-        self._lock = threading.Lock()
-        self._pending: queue.Queue[dict[str, object] | None] = queue.Queue(maxsize=1)
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
-
-    def subscribe(
-        self, callback: Callable[[dict[str, object]], None]
-    ) -> Callable[[], None]:
-        """Register a non-blocking view-state callback.
-
-        Args:
-            callback: Function invoked with the newest viewer-state snapshot.
-
-        Returns:
-            Function that unregisters `callback`.
-        """
-        with self._lock:
-            self._callbacks.add(callback)
-
-        def unsubscribe() -> None:
-            """Remove this subscription from the dispatcher."""
-            with self._lock:
-                self._callbacks.discard(callback)
-
-        return unsubscribe
-
-    def publish(self, state: dict[str, object]) -> None:
-        """Queue the newest snapshot, replacing an older pending snapshot.
-
-        Args:
-            state: JSON-compatible direct-viewer state.
-        """
-        try:
-            self._pending.put_nowait(state)
-        except queue.Full:
-            try:
-                self._pending.get_nowait()
-            except queue.Empty:
-                pass
-            self._pending.put_nowait(state)
-
-    def close(self) -> None:
-        """Stop dispatching after any currently running callback finishes."""
-        try:
-            self._pending.put_nowait(None)
-        except queue.Full:
-            try:
-                self._pending.get_nowait()
-            except queue.Empty:
-                pass
-            self._pending.put_nowait(None)
-        self._thread.join(timeout=1)
-
-    def _run(self) -> None:
-        """Dispatch queued snapshots until the close sentinel is received."""
-        while (state := self._pending.get()) is not None:
-            with self._lock:
-                callbacks = tuple(self._callbacks)
-            for callback in callbacks:
-                try:
-                    callback(state)
-                except Exception as error:
-                    LOGGER.exception("view-state callback failed: %s", error)
-
-
-def source_key(dataset_key: str) -> str:
-    """Return the Python datasource key for a dataset identifier.
-
-    Args:
-        dataset_key: Registered demo dataset identifier.
-
-    Returns:
-        Source key used by Neuroglancer's Python datasource protocol.
-    """
-    return f"{SOURCE_PREFIX}{dataset_key}"
-
-
-def make_volume(dataset_key: str) -> tuple[neuroglancer.LocalVolume, dict[str, object]]:
-    """Build one lazy Neuroglancer volume and its browser metadata.
-
-    Args:
-        dataset_key: Registered demo dataset identifier.
-
-    Returns:
-        The local volume and JSON-compatible dataset metadata.
-
-    Raises:
-        ValueError: If the dataset key is unknown or its pixels are invalid.
-        TypeError: If the dataset does not contain uint16 pixels.
-    """
-    ng_data = make_ng_data(dataset_key)
-    ranges, auto_ranges = volume_channel_contrast(ng_data.data_cxyz)
-    volume = neuroglancer.LocalVolume(
-        data=ng_data.data_cxyz,
-        dimensions=neuroglancer.CoordinateSpace(
-            names=["c^", "x", "y", "z"],
-            units=list(ng_data.units),
-            scales=list(ng_data.scales),
-        ),
-        volume_type="image",
-        encoding="npz",
-        downsampling=None,
-    )
-    return volume, {
-        "key": dataset_key,
-        "dtype": str(ng_data.data_cxyz.dtype),
-        "shapeCXYZ": list(ng_data.data_cxyz.shape),
-        "channelRanges": ranges,
-        "channelAutoRanges": auto_ranges,
-        "scales": list(ng_data.scales),
-        "units": list(ng_data.units),
-    }
 
 
 def make_ng_data(dataset_key: str) -> NgVolumeData:
@@ -179,7 +99,7 @@ def make_ng_data(dataset_key: str) -> NgVolumeData:
         acquisition = AcqImage.from_array(
             data_czyx,
             axes=("C", "Z", "Y", "X"),
-            source_id=f"ng-array-demo-{dataset_key}",
+            source_id=f"ng-viewer-{dataset_key}",
             axis_spacing={"X": x_um, "Y": y_um, "Z": z_um},
             axis_units={"X": "um", "Y": "um", "Z": "um"},
         )
@@ -187,7 +107,7 @@ def make_ng_data(dataset_key: str) -> NgVolumeData:
         acquisition = AcqImage.from_array(
             make_gaussian_band_data(channels=2, y_count=50_000, x_count=1_024),
             axes=("C", "Y", "X"),
-            source_id="ng-array-demo-long-2c",
+            source_id="ng-viewer-long-2c",
             axis_spacing={"Y": 0.002, "X": 0.25},
             axis_units={"Y": "s", "X": "um"},
         )
@@ -195,7 +115,7 @@ def make_ng_data(dataset_key: str) -> NgVolumeData:
         acquisition = AcqImage.from_array(
             make_gaussian_band_data(channels=1, y_count=30_000, x_count=100),
             axes=("C", "Y", "X"),
-            source_id="ng-array-demo-long-1c",
+            source_id="ng-viewer-long-1c",
             axis_spacing={"Y": 0.002, "X": 0.25},
             axis_units={"Y": "s", "X": "um"},
         )
@@ -250,153 +170,21 @@ def make_gaussian_band_data(
     return data
 
 
-class Handler(BaseHTTPRequestHandler):
-    """Serve lazy volumes, metadata, chunks, and viewer-state updates."""
-    volumes: dict[str, neuroglancer.LocalVolume]
-    volume_metadata: dict[str, dict[str, object]]
-    volume_locks: dict[str, threading.Lock]
-    view_states: ViewStateDispatcher
-
-    @classmethod
-    def get_volume(cls, key: str) -> neuroglancer.LocalVolume | None:
-        """Return or lazily create a registered local volume.
-
-        Args:
-            key: Python datasource key from the request path.
-
-        Returns:
-            Cached volume, or None when `key` is unknown.
-        """
-        dataset_key = key.removeprefix(SOURCE_PREFIX)
-        if key == dataset_key or dataset_key not in DATASET_KEYS:
-            return None
-        with cls.volume_locks[key]:
-            volume = cls.volumes.get(key)
-            if volume is None:
-                LOGGER.info("preparing dataset=%s", dataset_key)
-                volume, metadata = make_volume(dataset_key)
-                cls.volumes[key] = volume
-                cls.volume_metadata[key] = metadata
-            return volume
-
-    def end_headers(self) -> None:
-        """Add local-development CORS and cache headers."""
-        self.send_header("Access-Control-Allow-Origin", "*")
-        self.send_header("Cache-Control", "no-store")
-        super().end_headers()
-
-    def do_GET(self) -> None:  # noqa: N802
-        """Handle health, metadata, info, and chunk requests."""
-        parts = urlparse(self.path).path.strip("/").split("/")
-        try:
-            if parts == ["api", "health"]:
-                self._send_json(
-                    {
-                        "ok": True,
-                        "sources": [
-                            f"python://volume/{source_key(key)}" for key in DATASET_KEYS
-                        ],
-                    }
-                )
-                return
-            if len(parts) == 3 and parts[:2] == ["api", "dataset"]:
-                volume = self.get_volume(source_key(parts[2]))
-                if volume is None:
-                    self.send_error(HTTPStatus.NOT_FOUND)
-                    return
-                self._send_json(self.volume_metadata[source_key(parts[2])])
-                return
-            if len(parts) == 3 and parts[:2] == ["neuroglancer", "info"]:
-                volume = self.get_volume(parts[2])
-                if volume is None:
-                    self.send_error(HTTPStatus.NOT_FOUND)
-                    return
-                self._send_json(volume.info())
-                return
-            if (
-                len(parts) == 6
-                and parts[0] == "neuroglancer"
-                and parts[1] in {"raw", "npz"}
-            ):
-                _, data_format, key, scale_key, start_text, end_text = parts
-                volume = self.get_volume(key)
-                if volume is None:
-                    self.send_error(HTTPStatus.NOT_FOUND)
-                    return
-                start = np.array(start_text.split(","), dtype=np.int64)
-                end = np.array(end_text.split(","), dtype=np.int64)
-                payload, content_type = volume.get_encoded_subvolume(
-                    data_format=data_format, start=start, end=end, scale_key=scale_key
-                )
-                self.send_response(HTTPStatus.OK)
-                self.send_header("Content-Type", content_type)
-                self.send_header("Content-Length", str(len(payload)))
-                self.end_headers()
-                self.wfile.write(payload)
-                return
-        except (ValueError, IndexError) as error:
-            self.send_error(HTTPStatus.BAD_REQUEST, str(error))
-            return
-        except Exception as error:
-            self.send_error(HTTPStatus.INTERNAL_SERVER_ERROR, str(error))
-            return
-        self.send_error(HTTPStatus.NOT_FOUND)
-
-    def do_POST(self) -> None:  # noqa: N802
-        """Validate and publish a direct-viewer state snapshot."""
-        if urlparse(self.path).path != "/api/view-state":
-            self.send_error(HTTPStatus.NOT_FOUND)
-            return
-        try:
-            content_length = int(self.headers.get("Content-Length", "0"))
-            if content_length <= 0 or content_length > 1_000_000:
-                raise ValueError("Expected a non-empty view-state JSON payload")
-            state = json.loads(self.rfile.read(content_length))
-            if not isinstance(state, dict):
-                raise ValueError("Expected a JSON object")
-            required = {"datasetId", "layout", "position", "xyBounds"}
-            if not required.issubset(state):
-                raise ValueError(f"Missing view-state fields: {sorted(required - state.keys())}")
-        except (ValueError, json.JSONDecodeError) as error:
-            self.send_error(HTTPStatus.BAD_REQUEST, str(error))
-            return
-        self.view_states.publish(state)
-        self._send_json({"ok": True})
-
-    def _send_json(self, value: object) -> None:
-        """Write one successful JSON response.
-
-        Args:
-            value: JSON-serializable response value.
-        """
-        payload = json.dumps(
-            value, default=json_encoder_default, separators=(",", ":")
-        ).encode()
-        self.send_response(HTTPStatus.OK)
-        self.send_header("Content-Type", "application/json")
-        self.send_header("Content-Length", str(len(payload)))
-        self.end_headers()
-        self.wfile.write(payload)
-
-    def log_message(self, fmt: str, *args: object) -> None:
-        """Log control requests while suppressing high-volume chunk traffic.
-
-        Args:
-            fmt: Base request-handler format string.
-            *args: Values interpolated into `fmt`.
-        """
-        path = str(args[0]) if args else ""
-        if "/neuroglancer/npz/" not in path and "/neuroglancer/raw/" not in path:
-            LOGGER.info("http %s", fmt % args)
-
-
 def main() -> None:
     """Parse options and run the direct NumPy datasource server."""
     configure_logging()
-    parser = argparse.ArgumentParser(description="Serve the direct-JS NumPy milestone")
+    parser = argparse.ArgumentParser(description="Serve frontend development datasets")
     parser.add_argument("--port", type=int, default=8001)
     args = parser.parse_args()
-    viewer = NgArrayViewer(config=NgConfig(), port=args.port)
+    viewer = NgArrayViewer(
+        config=NgConfig(
+            show_dataset_control=True,
+            show_diagnostics=True,
+            show_channels_control=True,
+            show_layout_control=True,
+        ),
+        port=args.port,
+    )
     for key in DATASET_KEYS:
         viewer.register_volume_data(key, lambda key=key: make_ng_data(key), name=key)
     unsubscribe = viewer.subscribe_view_state(log_typed_view_state)
@@ -433,35 +221,6 @@ def log_typed_view_state(state: ViewState) -> None:
         state.layout.value,
         state.z or 0,
         state.z_unit or "index",
-        summary,
-    )
-
-
-def log_view_state(state: dict[str, object]) -> None:
-    """Log calibrated X/Y/Z state from the public callback contract.
-
-    Args:
-        state: Direct-viewer state containing physical position and XY bounds.
-    """
-    bounds = state.get("xyPhysicalBounds")
-    panel = bounds[0] if isinstance(bounds, list) and bounds else None
-    if isinstance(panel, dict):
-        x = panel.get("x", {})
-        y = panel.get("y", {})
-        summary = (
-            f"x=[{x.get('min', 0):.3f}, {x.get('max', 0):.3f}] {x.get('unit') or 'index'} "
-            f"y=[{y.get('min', 0):.3f}, {y.get('max', 0):.3f}] {y.get('unit') or 'index'}"
-        )
-    else:
-        summary = "xy bounds unavailable"
-    physical_position = state.get("physicalPosition", {})
-    z = physical_position.get("z", {}) if isinstance(physical_position, dict) else {}
-    LOGGER.info(
-        "view-state dataset=%s layout=%s z=%.3f %s %s",
-        state.get("datasetId"),
-        state.get("layout"),
-        z.get("value", 0),
-        z.get("unit") or "index",
         summary,
     )
 

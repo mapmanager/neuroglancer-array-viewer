@@ -1,55 +1,58 @@
-# Direct-JS Phase A
+# Frontend development
 
-This experiment imports the exact same pinned Neuroglancer GitHub commit as the Python project and mounts it into our `#ng-viewer` div through an `NgImageViewer` adapter. It uses no iframe.
+`direct-js/` contains the editable JavaScript source for the Neuroglancer Array
+Viewer. The production build is written to `src/ng_viewer/static/` and served
+by the Python package; Node and Vite are not runtime requirements for Python
+users.
 
-When served with `NgArrayViewer`, the client reads `/api/app-state` for registered datasets and `NgConfig` defaults. It watches the revisioned selected dataset so Python `select_dataset()` calls replace the source in an already-open viewer. The wrapper remains web-framework-neutral; NiceGUI or another host embeds the frontend URL rather than interpreting diagnostic JSON.
+## Development server
 
-It retains the official public FIB-25 precomputed datasource as a direct-embedding reference and also exposes AcqImage-backed NumPy datasets through Neuroglancer's upstream Python datasource protocol.
-
-```bash
-npm ci
-npm run dev
-```
-
-For frontend hot-reload development, start the Python data server from the project root before selecting a NumPy dataset:
+Start the development dataset server from the repository root:
 
 ```bash
-uv sync
 uv run python direct_numpy_server.py
 ```
 
-AcqStore is installed from editable `../acqstore` by the default development group on Python 3.12 or newer. It is not required by the installed core viewer or `register_numpy()`.
+Then start Vite from this directory:
 
-`npm run build` writes the verified production bundle to `src/ng_viewer/static/`. Those assets ship with the Python distribution and are served by `NgArrayViewer`, so application users need only one Python process. Vite remains the two-process development path because it provides frontend hot reload.
+```bash
+npm ci
+NG_ARRAY_DEMO_NUMPY_SERVER=http://127.0.0.1:8001 npm run dev
+```
 
-Node.js 22.18 or newer is required by this Neuroglancer revision. The public source requires network access and WebGL2. Its metadata describes a single-channel `uint8` electron-microscopy image with X/Y/Z dimensions, 8 nm isotropic voxels at full resolution, and a full-resolution shape of 6446 × 6643 × 8090. It has no C or T dimension.
+The main Vite page is the production UI. JavaScript usage examples live in
+`examples/` and share this project’s pinned dependencies, worker transform,
+and adapter implementation.
 
-`vite.config.js` deliberately excludes Neuroglancer from Vite's development dependency optimizer and routes its pinned backend worker through `src/ng-chunk-worker.js`. Neuroglancer locates that worker beside an upstream module with `import.meta.url`; without the explicit project entry Vite does not bundle the dependency-owned worker correctly, metadata loads but pixel chunks are never requested, and the viewer remains gray. The configuration also prebundles the specific CommonJS modules imported by the frontend and worker graphs.
+## Build
 
-`src/NgImageViewer.js` is the sole unstable-API boundary. It demonstrates direct mounting, source initialization, programmatic layout, scale-bar and axis-line toggles, bidirectional Z state, per-channel display controls, XY viewport bounds, datasource diagnostics, and supported global chrome suppression. At the pinned revision, the per-panel related-layout buttons have no granular public visibility option. The Options toggle uses project-scoped selectors for their verified exact titles, `Switch to 4panel-alt layout.` and `Switch to xy-3d layout.`; these selectors must be revalidated after an upstream pin change.
+```bash
+npm run build
+```
 
-The native top-left X/Y/Z control is Neuroglancer's display-dimensions widget. Its expanded `Default dims` and `Zoom-relative` controls alter displayed dimensions and relative render scales. The pinned revision has no granular state flag for its visibility. The Options menu therefore uses a narrowly scoped compatibility rule targeting `.neuroglancer-display-dimensions-widget`, verified in the rendered DOM at the exact pinned commit. It is visible by default, can be toggled at runtime, and the selector must be revalidated whenever the Neuroglancer pin changes.
+The generated HTML, JavaScript, CSS, WASM, and worker files are package data
+under `src/ng_viewer/static/`. The custom worker entry is required because
+Neuroglancer locates its backend worker relative to `import.meta.url`; the
+verified Vite transform routes that worker through `src/ng-chunk-worker.js`.
 
-The custom layout chrome is our own DOM and can be placed over the top, left, or bottom of the viewer, or outside it. `XY` restores the additive composite. `Channels side-by-side` and `Channels stacked` create Neuroglancer layer-group viewers containing one XY channel layer each, with shared navigation. The other buttons select `XY + 3D`, `4 panel`, or `3D`.
+## Source boundary
 
-A single right-docked Z rail appears for XY, side-by-side, and stacked layouts when the active source has more than one Z plane. It spans the complete viewer in stacked mode, preserving identical panel widths and X alignment. Native wheel navigation and the slider are bidirectional; half-voxel native positions map to their containing integer slice for the displayed slider/readout. Two-dimensional sources and 3D-only layouts hide the rail.
+`src/NgImageViewer.js` is the only module that accesses pinned unstable
+Neuroglancer APIs. It owns direct mounting, source replacement, layouts,
+channel display controls, Z navigation, initial fitting, view-state snapshots,
+and the documented scoped CSS compatibility toggles.
 
-The custom Options menu owns scale-bar, axis-line, display-dimensions, native-layout-button, Channels-control, and Layout-control visibility plus `Fit image`. Our two custom chrome visibility toggles use ordinary DOM `hidden` state; only the two native Neuroglancer controls need pinned CSS compatibility selectors. Fitting preserves source, layout, channels, contrast, colors, and Z; it centers the data and computes zoom from every live XY panel's actual dimensions, so a complete plane fits in composite and channel layouts. The previous demo-toolbar Z, presentation, and reset-source controls were removed.
+The page entry in `src/main.js` composes the packaged controls and applies
+`NgConfig`. Dataset selection and diagnostics are hidden by default and are
+intended for development configurations. Optional presentation chrome also
+defaults hidden; Options and multi-plane Z navigation remain available.
 
-The right-docked Channels overlay is generated from the active preset. Each channel has a color picker, a synchronized two-handle contrast range, exact min/max number inputs, and an Auto button. The slider/number domain is the exact observed channel minimum/maximum. Initial contrast and Auto use the server-calculated 1st–99th percentile range. Every channel is a separate additive image layer whose pinned-upstream `#uicontrol invlerp` selects the corresponding shader channel and whose `vec3 color` control sets its LUT color. The invlerp control's `range` is the active contrast mapping, while its `window` is the allowed UI/histogram domain. Updates stay in JavaScript and do not wait for Python.
+The native display-dimensions widget and two related-layout buttons have no
+granular upstream visibility flags at the pinned revision. Their selectors are
+scoped to the viewer root and must be revalidated whenever the Neuroglancer
+commit changes.
 
-The adapter exposes `getViewState()` and `subscribeViewState(callback)`. State includes dataset/source identity, revision, named index and calibrated physical positions, units/scales, layout, and both index and physical XY limits derived from each live slice panel's pinned projection matrix. The browser coalesces changes and posts them to `/api/view-state`; `NgArrayViewer.subscribe_view_state()` provides non-blocking typed Python callbacks and returns an unsubscribe function.
-
-Neuroglancer's default-viewer stylesheet assumes it owns the full page and sets document overflow to hidden. This wrapper overrides that rule only on `.ng-array-demo-page`, so the embedded viewer retains its layout while the surrounding page and diagnostics remain scrollable.
-
-Expected Phase A diagnostics are `directMount: true`, `iframeCount: 0`, and a layer whose datasource state changes from `loading` to `loaded` with at least one render layer. The initial position and zoom come from upstream's published FIB-25 example. If the public source cannot be reached, the concrete datasource error is shown there.
-
-The datasource selector switches between the public Phase A reference and six AcqImage-backed arrays with different shapes, channel counts, pixels, and physical calibration. Each selection restores one complete viewer state, including source, coordinate space, centered position, shader, and layout.
-
-Python owns each source through `AcqImage`, converts its full-resolution pixels once to contiguous `C,X,Y,Z`, and exposes it through a distinct pinned-upstream `python://volume/...` URL. The adapter applies `source_yx.T[::-1, :]` to every plane before transport, so source Y becomes displayed X and source X becomes reversed displayed Y; calibration follows that swap. Vite proxies protocol endpoints to `127.0.0.1:8001`, keeping worker requests same-origin.
-
-The two long synthetic sources use `C,Y,X` shapes `2,50000,1024` and `1,30000,100`. Their periodic Gaussian-profile bands change local angle smoothly along displayed X. Source Y is calibrated at `0.002 s` and becomes displayed X; source X is calibrated at `0.25 um` and becomes displayed Y. Neuroglancer uses those coordinate scales for non-square physical pixels, and the adapter fits the initial calibrated extent to the XY panel. Native scale bars and the coordinate widget expose dimension names/units; this pinned slice canvas has no supported conventional ticked-axis-label API.
-
-Volumes are created lazily on first selection to avoid allocating all large arrays at startup. The rr30a preset lazily calls AcqStore `ensure_sample_file("rr30a-two-channel")` and uses the cached local TIFF on subsequent runs. Every materialized dataset reports exact observed per-channel minima/maxima to the browser. Those values define the contrast-control domain and initial shader range; this is observed data, not camera bit-depth metadata.
-
-NPZ is used for chunk encoding because the pinned upstream raw Python encoder still calls NumPy's removed `ndarray.tostring()` method. We do not patch the Git dependency.
+Every source is concealed until its intended layers are ready and a live XY
+projection has been centered and fitted. There is no guessed delay.
+Neuroglancer does not expose a rendered-pixel-completion event, so slow chunk
+delivery can still populate progressively after the fitted canvas appears.

@@ -28,6 +28,8 @@ class NgConfig:
     show_native_layout_buttons: bool = False
     show_channels_control: bool = False
     show_layout_control: bool = False
+    show_dataset_control: bool = False
+    show_diagnostics: bool = False
 
     def to_json(self) -> dict[str, object]:
         """Return JSON-compatible browser configuration."""
@@ -41,4 +43,6 @@ class NgConfig:
             "showNativeLayoutButtons": self.show_native_layout_buttons,
             "showChannelsControl": self.show_channels_control,
             "showLayoutControl": self.show_layout_control,
+            "showDatasetControl": self.show_dataset_control,
+            "showDiagnostics": self.show_diagnostics,
         }

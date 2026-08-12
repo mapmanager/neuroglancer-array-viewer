@@ -3,14 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>Neuroglancer direct-JS Phase A</title>
-    <script type="module" crossorigin src="/assets/index-CG1c5jWM.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-Nx_QoE8y.css">
+    <title>Neuroglancer Array Viewer</title>
+    <script type="module" crossorigin src="/assets/index-6n-JGuAV.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-D5m4GkoO.css">
   </head>
-  <body class="ng-array-demo-page">
+  <body class="ng-viewer-page">
     <main>
-      <header>
-        <div><span>V2 · DIRECT-JS PHASE A</span><h1>Neuroglancer mounted in our div</h1></div>
+      <header id="viewer-header">
         <strong id="status">Starting…</strong>
       </header>
       <section class="controls" aria-label="Direct viewer controls">
@@ -27,7 +26,7 @@
         </label>
       </section>
 
-      <section id="viewer-stage" class="viewer-stage placement-top">
+      <section id="viewer-stage" class="viewer-stage placement-top viewer-initializing">
         <nav id="layout-chrome" class="layout-chrome" aria-label="Viewer layout">
           <span class="chrome-title">Layout</span>
           <button type="button" data-layout="xy">XY</button>
@@ -62,8 +61,7 @@
         </details>
       </section>
 
-      <p>Direct mount: no iframe. NumPy sources are supplied by AcqImage; selecting rr30a downloads and caches the sample through AcqStore when needed. The custom floating toolbar is our DOM, not Neuroglancer chrome.</p>
-      <details open><summary>Adapter diagnostics</summary><pre id="diagnostics"></pre></details>
+      <details id="diagnostics-panel" open><summary>Viewer diagnostics</summary><pre id="diagnostics"></pre></details>
     </main>
   </body>
 </html>

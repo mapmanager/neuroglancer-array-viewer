@@ -1,17 +1,18 @@
-# ng-array-demo — Agent Instructions
+# Neuroglancer Array Viewer — Agent Instructions
 
 ## Repository purpose
 
-`ng-array-demo` is an independent experimental repository for evaluating
-Neuroglancer with Python-owned NumPy image data and a directly embedded
-JavaScript viewer. The implementation is evolving; this file defines working
-and safety practices, not a permanent application architecture.
+This repository contains the `neuroglancer-array-viewer` distribution and
+`ng_viewer` Python package for Python-owned NumPy image data and a directly
+mounted JavaScript viewer. The implementation is evolving; this file defines
+working and safety practices, not a permanent application architecture.
 
 Current areas include:
 
-- `server.py` and `web/`: the iframe reference implementation;
+- `src/ng_viewer/`: installable Python API and packaged frontend;
 - `direct_numpy_server.py`: local NumPy datasource transport;
-- `direct-js/`: the directly mounted Neuroglancer client;
+- `direct-js/`: editable frontend source, build, and JavaScript examples;
+- `examples/python/`: Python host examples;
 - `roadmap-dev-ng.md`: implementation history, decisions, and next steps.
 
 Treat current filenames and boundaries as descriptive rather than immutable.
@@ -109,7 +110,6 @@ Run Python commands from the repository root:
 
 ```bash
 uv sync
-uv run python server.py
 uv run python direct_numpy_server.py
 ```
 

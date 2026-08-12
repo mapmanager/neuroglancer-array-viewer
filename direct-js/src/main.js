@@ -32,9 +32,16 @@ function applyConfig(config = {}) {
   $("#channel-chrome").hidden = !chromeVisibility.channels;
   $("#layout-chrome").hidden = !chromeVisibility.layout;
   $("#options-chrome").hidden = !(config.showOptionsControl ?? true);
+  $(".controls").hidden = !(config.showDatasetControl ?? true);
+  $("#viewer-header").hidden = !(config.showDiagnostics ?? true);
+  $("#diagnostics-panel").hidden = !(config.showDiagnostics ?? true);
   $("#viewer-stage").dataset.showZControl = String(config.showZControl ?? true);
   const placement = placementClass(config.chromePlacement);
-  $("#viewer-stage").className = `viewer-stage placement-${placement}`;
+  const stage = $("#viewer-stage");
+  for (const name of ["placement-top", "placement-left", "placement-bottom", "placement-external"]) {
+    stage.classList.remove(name);
+  }
+  stage.classList.add(`placement-${placement}`);
 }
 
 function renderChannelControls(channels) {
@@ -124,7 +131,7 @@ const unsubscribeBridge = adapter.subscribeViewState((viewState) => {
         body: JSON.stringify(payload),
       });
     } catch {
-      // Public-only Phase A can run without the optional Python server.
+      // The public-source development page can run without a Python server.
     }
   }, 100);
 });
@@ -138,8 +145,8 @@ if (initialApplication) {
     return option;
   }));
   applicationRevision = initialApplication.revision;
-  await adapter.setSource(`python-${initialApplication.selectedDataset}`);
   applyConfig(initialApplication.config);
+  await adapter.setSource(`python-${initialApplication.selectedDataset}`);
   adapter.setScaleBar(initialApplication.config.showScaleBar);
   adapter.setAxisLines(initialApplication.config.showAxisLines);
   adapter.setDisplayDimensions(initialApplication.config.showDisplayDimensions);
@@ -148,6 +155,7 @@ if (initialApplication) {
   await adapter.setSource("public");
 }
 render(adapter.getDiagnostics());
+$("#viewer-stage").classList.remove("viewer-initializing");
 
 const applicationPoll = window.setInterval(async () => {
   const state = await loadApplicationState();

@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import json
+import builtins
 import threading
 import unittest
+from unittest.mock import patch
 from urllib.request import urlopen
 
 import numpy as np
@@ -39,8 +41,19 @@ class NgArrayViewerTests(unittest.TestCase):
                 "showNativeLayoutButtons": False,
                 "showChannelsControl": False,
                 "showLayoutControl": False,
+                "showDatasetControl": False,
+                "showDiagnostics": False,
             },
         )
+
+    def test_public_imports_and_packaged_frontend(self) -> None:
+        """Keep the curated API importable and the one-process UI present."""
+        from importlib.resources import files
+
+        import ng_viewer
+
+        self.assertIs(ng_viewer.NgArrayViewer, NgArrayViewer)
+        self.assertTrue(files("ng_viewer").joinpath("static", "index.html").is_file())
 
     def test_view_state_uses_layout_enum_and_calibrated_ranges(self) -> None:
         """Parse the browser contract into immutable semantic objects."""
@@ -74,6 +87,24 @@ class NgArrayViewerTests(unittest.TestCase):
             viewer.register_acqimage("sample", acquisition)
         viewer.stop()
 
+    def test_numpy_registration_does_not_import_acqstore(self) -> None:
+        """Keep the core NumPy path independent of optional AcqStore."""
+        original_import = builtins.__import__
+
+        def guarded_import(name: str, *args: object, **kwargs: object) -> object:
+            if name == "acqstore" or name.startswith("acqstore."):
+                raise AssertionError("register_numpy imported AcqStore")
+            return original_import(name, *args, **kwargs)
+
+        viewer = NgArrayViewer()
+        with patch("builtins.__import__", side_effect=guarded_import):
+            viewer.register_numpy(
+                "numpy-only",
+                np.zeros((2, 3), dtype=np.uint16),
+                axes=("Y", "X"),
+            )
+        viewer.stop()
+
     def test_instance_server_exposes_config_and_runtime_selection(self) -> None:
         """Publish per-instance state and revision live dataset replacement."""
         viewer = NgArrayViewer(port=0)
@@ -87,6 +118,8 @@ class NgArrayViewerTests(unittest.TestCase):
         try:
             with urlopen(f"{viewer.transport_url}/api/app-state") as response:
                 initial = json.load(response)
+            with urlopen(viewer.viewer_url) as response:
+                frontend = response.read().decode()
             viewer.select_dataset("second")
             with urlopen(f"{viewer.transport_url}/api/app-state") as response:
                 replaced = json.load(response)
@@ -94,6 +127,7 @@ class NgArrayViewerTests(unittest.TestCase):
             viewer.stop()
 
         self.assertEqual(initial["selectedDataset"], "first")
+        self.assertIn("Neuroglancer Array Viewer", frontend)
         self.assertEqual(replaced["selectedDataset"], "second")
         self.assertGreater(replaced["revision"], initial["revision"])
 
